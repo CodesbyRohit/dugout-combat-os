@@ -286,7 +286,7 @@ export default function App() {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('Connected to DUGOUT War Room WebSocket');
+      console.log('Connected to DUGOUT Platform WebSocket');
       setConnected(true);
     };
 
@@ -559,7 +559,7 @@ export default function App() {
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <h1 className="brand-logo">DUGOUT</h1>
-              <span className="brand-badge">EMOTIONAL OS</span>
+              <span className="brand-badge">ANALYTICS PROTOTYPE</span>
             </div>
             <span style={{ fontSize: '0.85rem', color: 'var(--neon-cyan)', fontStyle: 'italic', fontWeight: 600, letterSpacing: '0.5px', marginTop: '2px' }}>
               "The match isn't being watched. It's being interpreted."
@@ -668,7 +668,7 @@ export default function App() {
             </div>
             <div className="pitch-step-box">
               <div className="pitch-step-num">Step 3: Cinematic Telemetry</div>
-              <div className="pitch-step-title">Realtime Emotional OS</div>
+              <div className="pitch-step-title">Realtime Adaptive Telemetry</div>
               <div className="pitch-step-desc">
                 Showcase how room hum pitch modulates, grids shift color schemes (clutch/critical), and screen shakes on wickets.
               </div>
@@ -750,7 +750,7 @@ export default function App() {
               {simulationStatus !== 'running' ? (
                 <button className="control-btn active" onClick={handleStart}>
                   <Play size={16} />
-                  {simulationStatus === 'paused' ? 'Resume OS Feed' : 'Deploy OS Feed'}
+                  {simulationStatus === 'paused' ? 'Resume Engine Feed' : 'Deploy Engine Feed'}
                 </button>
               ) : (
                 <button className="control-btn" onClick={handlePause}>
@@ -851,7 +851,7 @@ export default function App() {
           </div>
         ) : (
           <div style={{ marginTop: '1.5rem', textAlign: 'center', padding: '1rem 0', color: 'var(--text-secondary)' }}>
-            🏏 Deploy the War Room OS to start real-time telemetry feed.
+            🏏 Deploy the platform to start real-time telemetry feed.
           </div>
         )}
       </SpatialCard>
@@ -1022,7 +1022,7 @@ export default function App() {
           letterSpacing: '2px',
           fontWeight: 700
         }}>
-          DUGOUT is AI thinking at match speed.
+          Experimental multi-agent cricket intelligence platform.
         </p>
       </footer>
     </div>

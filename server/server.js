@@ -499,7 +499,7 @@ function broadcast(message) {
 
 // WebSocket connections
 wss.on("connection", (ws) => {
-  console.log("Client connected to DUGOUT War Room WebSocket");
+  console.log("Client connected to DUGOUT Platform WebSocket");
   
   ws.send(JSON.stringify({
     type: "SYSTEM_READY",

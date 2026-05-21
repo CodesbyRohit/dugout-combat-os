@@ -1,6 +1,6 @@
-# DUGOUT — Agentic AI War Room for Cricket
+# DUGOUT — Experimental Multi-Agent Cricket Intelligence Platform
 
-DUGOUT is a real-time multi-agent AI cricket intelligence command center that operates like the back-office intelligence room of a professional IPL franchise during a live match. It reacts dynamically to ball-by-ball matches, interpreting momentum changes, predicting tactical matchups, and crafting dramatic cinematic commentary.
+DUGOUT is a broadcast-grade cricket analytics and replay intelligence prototype. It reacts dynamically to ball-by-ball matches, interpreting momentum changes, predicting tactical matchups, and crafting dramatic cinematic commentary.
 
 ---
 
@@ -47,7 +47,7 @@ npm run client
 2. By default, the application runs in **High-Fidelity Offline Sim Mode** using preloaded iconic matches (e.g. *IND vs PAK T20 WC 2022* or *MI vs CSK IPL 2019 Final*).
 3. If you want to use the live LLM model generation, click the **Settings** gear at the top right, paste your **Gemini API Key**, and click **Save Key**.
 4. Select a scenario from the dropdown (e.g. `IND vs PAK (T20 World Cup 2022)`).
-5. Click **Deploy War Room**.
+5. Click **Deploy Engine Feed**.
 6. Watch the system come alive:
    - **Scoreboard**: Updates ball-by-ball.
    - **Analyst Panel**: Calculates win probabilities, pressure indexes, and explains statistical shifts.
@@ -55,7 +55,7 @@ npm run client
    - **Narrator Panel**: Generates high-tension cinematic voiceover subtitles.
    - **Momentum Pulse**: Heartbeat-pulses faster and glows orange/red during critical wickets or tense final-over balls.
    - **Win Probability Graph**: Renders a glowing neon line chart plotting probability trends in real-time.
-   - **War Room Log**: Shows the shared timeline log of all agents.
+   - **Intelligence Log**: Shows the shared timeline log of all agents.
 
 ---
 

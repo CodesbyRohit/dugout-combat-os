@@ -1,7 +1,7 @@
 {
   "name": "dugout-server",
   "version": "1.0.0",
-  "description": "Real-time AI Cricket Franchise War Room Backend",
+  "description": "Experimental multi-agent cricket intelligence platform - Backend",
   "main": "server.js",
   "type": "module",
   "scripts": {

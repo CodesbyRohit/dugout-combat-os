@@ -43,7 +43,7 @@ export default function EventTimeline({ timeline, onReplayEvent, activeReplayOve
     >
       <div className="panel-header">
         <div className="panel-title-wrapper">
-          <h3 className="panel-title">War Room Log</h3>
+          <h3 className="panel-title">Intelligence Log</h3>
           <div className="panel-role">Shared Agent memory & replay coordinates</div>
         </div>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
