@@ -1,46 +1,47 @@
-# DUGOUT — Broadcast-Grade Cricket Analytics & Replay Intelligence Platform
+# ⚡ DUGOUT — Broadcast-Grade Cricket Analytics & Battle OS v3.7
 
 > **“The match isn't being watched. It's being interpreted.”**  
-> DUGOUT transitions from a simple analytics tool to a sports war-room operations OS. It interprets match pressure, tactical shift, team momentum, and agentic disagreement in real time.
+> DUGOUT transitions from a simple analytics tool to a sports war-room operations OS. It interprets match pressure, tactical shifts, team momentum, and agentic disagreement in real time under the design styling of Stark Industries FRIDAY interface.
 
 ---
 
-## ⚡ Tech Stack & Architecture
+## 🚀 Tech Stack & Architecture
 
-- **Frontend**: React (Vite) + Custom HSL design system (Bloomberg/F1 styled) + HTML5 Canvas Telemetry Graph
-- **Backend**: Node.js + Express + WebSockets (`ws` orchestration)
+- **Frontend**: React (Vite) + Custom HSL design system (Stark Battle HUD styled) + HTML5 Canvas Telemetry Graph
+  - Core component: [App.jsx](file:///C:/Users/Sarika%20Srivastava/.gemini/antigravity/scratch/dugout/client/src/App.jsx)
+  - Style sheet: [index.css](file:///C:/Users/Sarika%20Srivastava/.gemini/antigravity/scratch/dugout/client/src/index.css)
+- **Backend**: Node.js + Express + WebSockets (`ws` orchestration) on `localhost:3001`
 - **Agentic Engine**: Unified Match Shared Memory Context (Analyst ➔ Scout ➔ Narrator)
 - **Model Layer**: Gemini 2.5 Flash API (with high-fidelity local rules/rotating template fallbacks)
 - **Ingestion Abstraction**: Extensible Cricbuzz/CricAPI adapter abstraction layer to support real API feeds in production
 
 ---
 
-## 🌟 Core Features
+## 🌟 Stark Industries Battle OS (v3.7) Features
 
-### 1. Live Match Simulation Engine
-A lightweight, probabilistic cricket event generator replacing fixed scripting with dynamic match evolution:
-- **Weighted Probabilities**: Generates runs (dots, singles, doubles, boundaries, sixes) and wickets based on live match contexts.
-- **Adaptive Intent**: Batsmen aggression shifts dynamically based on required run rate, wicket count, death overs (high volatility), and quiet overs (lower event intensity).
-- **Strike Rotation**: Accurately tracks strike rotation (odd runs, end of overs) and batsman/bowler matchups.
+### 1. Jarvis Boot Diagnostics Overlay
+DUGOUT loads behind a locked secure diagnostic grid to prevent browser autoplay blockages. 
+- **Engage Cognitive Grid**: Clicking the button unlocks the browser Web Audio context.
+- **Boot Telemetry Logs**: A 3.4-second sequential console readout prints system diagnostics (WebSocket checks, agent caches, Arc Reactor checks) matching precise delays.
+- **Speech Synthesis Welcome**: Once booted, the system speaks: *"Dugout systems are fully operational. FRIDAY is online. Welcome back, Boss."*
 
-### 2. Hybrid Replay Architecture
-Seamless transition between two primary presentation modes:
-- **LIVE SIMULATION**: Fully dynamic, unscripted live feed with real-time probabilistic event generation.
-- **HISTORICAL REPLAY**: Deterministic playback of iconic matches (*IND vs PAK T20 WC 2022* or *MI vs CSK IPL 2019 Final*).
-- **Temporal Memory**: Jump to any past milestone in the historical timeline to rewind states (scores, win probabilities, agent insights) and return to the live feed safely.
+### 2. Arc Reactor Momentum Core
+A heavy circular gauge visualizer positioned at the core of the telemetry interface.
+- **Dynamic Rotation**: The ring elements (`reactor-ring-outer`, `reactor-ring-middle`, `reactor-ring-inner`) rotate in alternating directions (`reactorRotate`) at speeds proportional to match tempo.
+- **Breathing Pulse**: The central reactor core (`reactor-core-glow`) breathes dynamically (`reactorBreathe`), changing color and intensity as the Match Pressure Index rises.
+- **Mood Skins**: The layout dynamically toggles mood themes (`mood-stable`, `mood-alert`, `mood-volatile`, `mood-critical`, `mood-clutch`) shifting HSL glow values across the entire screen.
 
-### 3. Real-Time Agent Reactions & Tactical Dissent
-Three coordinated AI agents analyze the telemetry stream:
-- **Franchise Analyst**: Calculates mathematical success probability and interprets structural shifts.
-- **Tactical Scout**: Formulates matchups and field placements.
-- **Cinematic Narrator**: Synthesizes the emotional story of the match.
-- *Rotating commentary templates guarantee variation so that insights remain engaging without repetitive phrasing.*
-- *Active tactical dissent badges highlight moments when the Scout challenges the Analyst’s models.*
+### 3. God-Mode Event Visual Effects (VFX)
+- **Wicket Apocalypse (.wicket-event)**: Triggering a wicket causes a 2.2-second chromatic aberration split and shake across all cards (`wicketGlitch`), reflecting a catastrophic event.
+- **Boundary Plasma Shockwave (.boundary-event)**: Fours and Sixes flash a 1.6-second golden high-energy border pulse.
+- **Win Probability Shifts (.probability-shift)**: Major changes ($> 5\%$) trigger a 1.4-second canvas plasma glow on the win probability telemetry chart.
 
-### 4. Real-Time Telemetry & Pacing
-- **Latency Jitter**: Simulates realistic telemetry lag (10–50ms in Replay, 50–200ms in Live Mode) to mimic live cricket data feeds.
-- **Live Feed Indicator**: Pulsing F1-style live telemetry state badges.
-- **Emotional Pacing**: Grids shift color coordinates (Clutch, Critical, Volatile, Alert, Stable) and the UI shakes on critical match events.
+### 4. Advanced Multi-Agent Text-to-Speech (TTS)
+Three distinct coordinated agent personalities speak their findings sequentially:
+- **Franchise Analyst**: Speaks with a low, calculating voice (pitch `0.8`, rate `0.9`).
+- **Tactical Scout**: Speaks with a fast, high-pitched matchup voice (pitch `1.2`, rate `1.1`).
+- **Cinematic Narrator**: Speaks with a balanced, dramatic voice (pitch `1.0`, rate `1.0`).
+- *Dissent flags draw amber diagnostic borders when the Scout challenges the Analyst's forecast.*
 
 ---
 
@@ -70,18 +71,23 @@ npm run client
 
 ---
 
-## 🎮 Presentation & Demo Strategy (3-Min Guide)
+## 🎮 Presentation & Demo Strategy (God-Mode Walkthrough)
 
-1. **Setup Mode**:
-   - Open [http://localhost:3000](http://localhost:3000). By default, it launches in **Live Simulation Mode**.
-   - Use the **Settings** panel to paste a Gemini API Key to enable live GenAI commentary (falls back to local rules/templates if empty).
-2. **Step 1: The Live Simulation**:
-   - Select a scenario (e.g. *IND vs PAK*) and click **Deploy Engine Feed**.
-   - Explain: *"Unlike scripted displays, DUGOUT generates a live probabilistic match state where batsmen rotate strike, aggression shifts, and every run is unscripted."*
-3. **Step 2: Coordinated Dissent**:
-   - Call attention to the Agent Panels. Show how the **Scout** sometimes disagrees with the **Analyst**, flag-marked with the **amber dissent border**.
-4. **Step 3: Temporal Rewind**:
-   - Switch the Mode Tab to **Historical Replay** or click any milestone on the **Event Timeline**.
-   - Explain: *"With replay intelligence, we can instantly pause, rewind, and analyze critical overs, and then return to the live feed without leaking state."*
-5. **Step 4: Cinematic Telemetry**:
-   - Adjust the speed (1.5x, 2x, Turbo) and watch the win probability graph plot dynamically. Point out the real-time telemetry timestamps and jitter latency indicators.
+1. **Step 1: The Initial Hook (Stark Boot)**:
+   - Open [http://localhost:3000](http://localhost:3000) on the presentation screen.
+   - Point out the locked diagnostic terminal and the rotating blueprint vector.
+   - Click **ENGAGE COGNITIVE GRID**. Watch the logs stream in and let the crowd hear FRIDAY's voice welcome you back.
+2. **Step 2: Deploy Scenario**:
+   - Choose a scenario (e.g. *IND vs PAK*) and click **Deploy Engine Feed**.
+   - Point out the rotating Arc Reactor and explain: *"Every delivery is generated in real-time by a probabilistic simulation engine tracking batting aggression, strike rotation, and bowler matchups."*
+3. **Step 3: Multi-Agent Dissent & TTS**:
+   - Listen as the agents speak sequentially. Point out the highlighted borders flashing as each agent speaks.
+   - Show the **Tactical Dissent Badge** when the Scout disagrees with the Analyst's mathematical prediction.
+4. **Step 4: Doom Events (Wickets & Boundaries)**:
+   - Wait for a boundary or trigger a demo moment. Watch the screen glow gold.
+   - When a wicket falls, point out the chromatic glitch aberration shaking the UI.
+5. **Step 5: Temporal Rewind**:
+   - Switch to **Historical Replay** or click any marker on the timeline. Show that we can travel back in time, analyze critical moments, and resume the live simulation safely.
+
+---
+*For backup measures and venue WiFi troubleshooting, consult the [fallback_strategy.md](file:///C:/Users/Sarika%20Srivastava/.gemini/antigravity/scratch/dugout/fallback_strategy.md) protocol.*
