@@ -1,0 +1,33 @@
+[
+  {
+    "index": 0,
+    "over": 16,
+    "score": "142/4",
+    "runs": 142,
+    "wickets": 4,
+    "winProbability": 48,
+    "pressureIndex": 90,
+    "event": "dot",
+    "batsman": "Suryakumar Yadav",
+    "bowler": "Avesh Khan",
+    "commentary": "Match ready. Target: 184 in 20 overs. Starting Live Match Simulation.",
+    "agents": {
+      "analyst": {
+        "text": "MI win probability tracks at 48% in this 2026 IPL clash, with the pressure index holding steady at 90/100.",
+        "confidence": 50,
+        "stability": "STABLE",
+        "certainty": "CONFIDENT"
+      },
+      "scout": {
+        "text": "Jaiswal has placed a deep square leg. Scout recommends hitting the gaps to secure quick doubles.",
+        "confidence": 50,
+        "stability": "STABLE",
+        "certainty": "ALIGNED",
+        "dissent": false
+      },
+      "narrator": {
+        "text": "Every run brings MI closer, every dot tightens the vise for RR's playoff berth. The story is building ball by ball."
+      }
+    }
+  }
+]

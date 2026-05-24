@@ -431,6 +431,63 @@ export const SCENARIOS = {
         commentary: "WICKET! MUMBAI INDIANS ARE IPL 2019 CHAMPIONS! Malinga bowls a legendary slower yorker, Thakur misses the flick, hit on the pad, massive appeal, and the umpire raises the finger! LBW! MI wins by 1 run!"
       }
     ]
+  },
+  mi_vs_rr_2026: {
+    name: "MI vs RR (IPL 2026 Live Match)",
+    venue: "Wankhede Stadium, Mumbai",
+    battingTeam: "Mumbai Indians",
+    bowlingTeam: "Rajasthan Royals",
+    target: 184,
+    startingScore: 142,
+    startingWickets: 4,
+    startingOvers: 16,
+    balls: [
+      {
+        over: 16.1,
+        batsman: "Suryakumar Yadav",
+        bowler: "Trent Boult",
+        runs: 1,
+        event: "single",
+        score: "143/4",
+        wickets: 4,
+        shake: false,
+        confidence: {
+          analyst: { value: 75, stability: "HIGH", certainty: "STABLE" },
+          scout: { value: 80, stability: "STABLE", certainty: "ALIGNED" }
+        },
+        commentary: "Trent Boult back into the attack. Suryakumar Yadav plays it with soft hands to cover for a single."
+      },
+      {
+        over: 16.2,
+        batsman: "Hardik Pandya",
+        bowler: "Trent Boult",
+        runs: 4,
+        event: "boundary",
+        score: "147/4",
+        wickets: 4,
+        shake: true,
+        confidence: {
+          analyst: { value: 78, stability: "MODERATE", certainty: "STABLE" },
+          scout: { value: 72, stability: "STABLE", certainty: "DIVERGENT" }
+        },
+        commentary: "FOUR! Pandya sweeps Boult over backward square leg for a cracking boundary!"
+      },
+      {
+        over: 19.6,
+        batsman: "Suryakumar Yadav",
+        bowler: "Avesh Khan",
+        runs: 4,
+        event: "boundary",
+        score: "184/5",
+        wickets: 5,
+        shake: true,
+        confidence: {
+          analyst: { value: 99, stability: "STABLE", certainty: "STABLE" },
+          scout: { value: 99, stability: "STABLE", certainty: "ALIGNED" }
+        },
+        commentary: "FOUR! Suryakumar Yadav scoops Avesh Khan over fine leg for the winning boundary! Mumbai Indians pull off a brilliant chase at the Wankhede!"
+      }
+    ]
   }
 };
 
@@ -486,6 +543,16 @@ export const DISAGREEMENTS = {
     "19.5": {
       analyst: "Shane Watson run out on 80! Score: 148/6. Win probability swings to a dead heat: 50-50.",
       scout: "CSK has the tactical disadvantage now. Shardul Thakur is vulnerable to yorkers. MI has fielders in the ring; no boundaries will be allowed."
+    }
+  },
+  mi_vs_rr_2026: {
+    "17.2": {
+      analyst: "Win probability calculations show MI at 64% after Pandya's boundary. The required run rate is 10.42 RPO.",
+      scout: "I disagree with the optimism. Chahal's leg-break matchup against Pandya is statistically under-valued here. If RR floats it wide, Pandya is highly likely to edge it."
+    },
+    "18.4": {
+      analyst: "Win probability shifts to RR (58%) as Suryakumar is isolated. Pressure index: 76%.",
+      scout: "Tactically, Suryakumar has scored 60% of his runs behind the wicket on this ground. RR has not placed a deep third man. He should scoop Avesh Khan now."
     }
   }
 };

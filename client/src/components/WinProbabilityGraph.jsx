@@ -1,7 +1,24 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 export default function WinProbabilityGraph({ history, matchInfo }) {
   const canvasRef = useRef(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const prevProbRef = useRef(50);
+
+  useEffect(() => {
+    if (history && history.length > 0) {
+      const currProb = history[history.length - 1].winProbability;
+      const shift = Math.abs(currProb - prevProbRef.current);
+      if (shift > 5) {
+        setIsUpdating(true);
+        const timer = setTimeout(() => setIsUpdating(false), 1400);
+        prevProbRef.current = currProb;
+        return () => clearTimeout(timer);
+      }
+      prevProbRef.current = currProb;
+    }
+  }, [history]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -163,7 +180,7 @@ export default function WinProbabilityGraph({ history, matchInfo }) {
   }, [history]);
 
   return (
-    <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
+    <div className={`graph-container probability-graph-container ${isUpdating ? 'probability-shift' : ''}`} style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
         <span style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
           Probability Trend Curve
@@ -173,7 +190,7 @@ export default function WinProbabilityGraph({ history, matchInfo }) {
         </span>
       </div>
       <div style={{ flexGrow: 1, position: 'relative', minHeight: '140px' }}>
-        <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+        <canvas ref={canvasRef} className={`probability-canvas ${isUpdating ? 'updating' : ''}`} style={{ width: '100%', height: '100%', display: 'block' }} />
       </div>
     </div>
   );

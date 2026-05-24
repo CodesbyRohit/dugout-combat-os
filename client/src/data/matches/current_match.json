@@ -1,0 +1,14 @@
+{
+  "match_id": "2026_ipl_mi_rr",
+  "match_date": "2026-05-24T19:30:00+05:30",
+  "venue": "Wankhede Stadium, Mumbai",
+  "teams": {
+    "batting": "MI",
+    "bowling": "RR"
+  },
+  "scoreboard": {
+    "runs": 0,
+    "wickets": 0,
+    "overs": 0
+  }
+}

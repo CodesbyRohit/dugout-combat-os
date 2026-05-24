@@ -4,6 +4,9 @@ import http from "http";
 import cors from "cors";
 import dotenv from "dotenv";
 import { SCENARIOS, DISAGREEMENTS } from "./scenarios.js";
+import { LiveMatchEngine } from "./liveEngine.js";
+import { CricbuzzAdapter } from "./cricbuzzAdapter.js";
+import fs from "fs";
 
 dotenv.config();
 
@@ -18,12 +21,16 @@ const PORT = process.env.PORT || 3001;
 
 // Global settings
 let activeApiKey = process.env.GEMINI_API_KEY || "";
+let activeMode = "live"; // "historical" or "live"
+
+const liveEngine = new LiveMatchEngine();
+const cricbuzzAdapter = new CricbuzzAdapter();
 
 // Simulation State
 let currentScenario = null;
 let currentScenarioId = "";
 let currentBallIndex = -1;
-let simulationInterval = null;
+let simulationTimeout = null; // Replaced simulationInterval for jitter support
 let simulationSpeed = 3000; // ms per ball
 let matchHistory = [];
 let sharedMemory = {
@@ -140,6 +147,167 @@ function generateFallbackInsights(scenarioId, ball, prob, pressure, state) {
   };
 }
 
+const liveAgentCounters = { analyst: 0, scout: 0, narrator: 0 };
+
+const LIVE_INSIGHTS_DATABASE = {
+  analyst: {
+    highRate: [
+      "The required run rate has climbed to {requiredRR} RPO. Chasing team's win probability sits at {winProbability}% due to escalating pressure.",
+      "Chasing team must operate at {requiredRR} RPO to secure victory. Analytics models place their current success probability at {winProbability}%.",
+      "Statistical trajectory is deteriorating. Win probability dips to {winProbability}% under the weight of a {requiredRR} required run rate."
+    ],
+    wicketFell: [
+      "Wicket fall degrades batting stability. Win probability recalibrated to {winProbability}% with a pressure spike to {pressureIndex}.",
+      "A critical breakthrough for the bowling unit. The chasing team drops to {winProbability}% win probability as the batting order is exposed.",
+      "The loss of a crucial wicket has restricted the chase strategy. Chasing team holds a {winProbability}% chance of victory under climbing pressure."
+    ],
+    general: [
+      "Current match state shows score at {score} chasing {target}. Required rate is {requiredRR}. Win probability stabilized at {winProbability}%.",
+      "Chasing team win probability is tracked at {winProbability}%, with the pressure index holding steady at {pressureIndex}/100.",
+      "Telemetry updates: Chasing side is {runsNeeded} runs away from victory. Win probability calculates at {winProbability}%."
+    ]
+  },
+  scout: {
+    highRate: [
+      "Slight adjustment: Scout recommends targeting {bowler}'s slower off-cutters or seeking boundary opportunities over mid-on.",
+      "Aggression coefficient must rise. Scout advises batsmen to target the short boundary and look to clear the front leg.",
+      "Field settings indicate deep protection on the leg-side. Scout recommends batsmen punch straight down the ground."
+    ],
+    wicketFell: [
+      "New batsman needs to rotate strike immediately. Scout advises bowler {bowler} to target the top of off-stump to maintain pressure.",
+      "Consolidation required. Scout advises playing out the remainder of the over before initiating further boundary attempts.",
+      "Wicket cluster risk is high. Scout advises the batsman to establish a solid defense against {bowler}'s moving deliveries."
+    ],
+    general: [
+      "Matchup telemetry: {batsman} vs {bowler}. Scout recommends bowling hard back-of-a-length deliveries to squeeze the batsman.",
+      "Defensive field set with deep midwicket and long-off back. Scout recommends hitting the gaps to secure quick doubles.",
+      "Bowler {bowler} is testing the pitch. Scout suggests the batsman utilize the pace and play late to third-man."
+    ]
+  },
+  narrator: {
+    highRate: [
+      "High drama under the floodlights! One delivery here could shift the entire mood of the championship.",
+      "A battle of pure nerves. The required rate is climbing, and the crowd is screaming in anticipation.",
+      "Absolute tension. Chasing team is running out of time, and the bowler feels the energy of the crowd."
+    ],
+    wicketFell: [
+      "Stunning! The stadium falls into absolute silence as the bails fly. The bowler celebrates a match-defining wicket!",
+      "A massive wicket! Crucial breakthrough that alters the narrative completely. The bowling team erupts in joy.",
+      "The striker is sent back! Chaos on the field as the chasing team's plans are thrown into disarray."
+    ],
+    general: [
+      "A test of absolute character. {batsman} and {bowler} are locked in a high-stakes duel in the middle.",
+      "Every run is a step closer to victory, every dot a tightening of the vise. The drama is building ball by ball.",
+      "{batsman} takes a deep breath. {bowler} runs in. The story of this championship is written one ball at a time."
+    ]
+  }
+};
+
+const MI_VS_RR_INSIGHTS = {
+  analyst: {
+    highRate: [
+      "MI is chasing {target} at Wankhede. The required rate of {requiredRR} RPO puts MI's success probability at {winProbability}% in this projected simulation.",
+      "With Parag injured and Jaiswal leading RR, our projection model prices MI's chase probability at {winProbability}% against this target.",
+      "Statistical curve for Wankhede: Win probability dips to {winProbability}% under the weight of a {requiredRR} required run rate."
+    ],
+    wicketFell: [
+      "Wicket fall shatters MI's middle order. Win probability drops to {winProbability}% with a pressure spike to {pressureIndex}/100.",
+      "RR gets a vital breakthrough. Jaiswal's defensive field adjustments successfully restrict MI. Win probability at {winProbability}%.",
+      "Loss of {batsman} restricts MI's chase. The models recalculate success to {winProbability}% under rising pressure."
+    ],
+    general: [
+      "Match 69 Live Projection: MI is {score} chasing RR's {target}. Required run rate is {requiredRR}. MI Win Probability: {winProbability}%.",
+      "MI win probability tracks at {winProbability}% in this 2026 IPL clash, with the pressure index holding steady at {pressureIndex}/100.",
+      "Telemetry checks: Chasing side is {runsNeeded} runs away from victory. Win probability calculates at {winProbability}%."
+    ]
+  },
+  scout: {
+    highRate: [
+      "Scout recommendation: target Avesh Khan's full-tosses. Pandya and Suryakumar must clear the front leg to utilize Wankhede's short boundaries.",
+      "Aggression coefficient must rise. Jaiswal has pulled Sandeep Sharma deep; look to hit straight down the ground.",
+      "Field settings indicate deep protection on the leg-side. Scout recommends batsmen punch straight through extra cover."
+    ],
+    wicketFell: [
+      "New batsman needs to consolidate. Scout advises bowler {bowler} to target the top of off-stump to maintain RR's leverage.",
+      "Consolidation required. Scout advises playing out the remainder of the over before initiating further boundary attempts.",
+      "Wicket cluster risk is high. Scout advises the batsman to establish a solid defense against Boult's swinging deliveries."
+    ],
+    general: [
+      "Matchup telemetry: {batsman} vs {bowler}. Scout recommends bowling hard back-of-a-length deliveries to squeeze the batsman.",
+      "Jaiswal has placed a deep square leg. Scout recommends hitting the gaps to secure quick doubles.",
+      "Bowler {bowler} is testing Wankhede's pitch. Scout suggests the batsman utilize the pace and play late to third-man."
+    ]
+  },
+  narrator: {
+    highRate: [
+      "High drama under the Wankhede lights! Jaiswal marshalling his RR troops as Suryakumar prepares to strike.",
+      "A battle of pure nerves for the RR playoffs spot. The required rate is climbing, and the Mumbai crowd is screaming.",
+      "Absolute tension. MI is running out of time, and the bowler feels the energy of the vocal Wankhede crowd."
+    ],
+    wicketFell: [
+      "Stunning! Wankhede falls into absolute silence as the bails fly. RR celebrates a massive wicket!",
+      "A massive wicket! Crucial breakthrough for RR's playoff hopes. Yashasvi Jaiswal erupts in joy.",
+      "The striker {batsman} is sent back! Trent Boult delivers the breakthrough and RR's plans are running smooth."
+    ],
+    general: [
+      "A test of absolute character. {batsman} and {bowler} are locked in a high-stakes duel in the middle.",
+      "Every run brings MI closer, every dot tightens the vise for RR's playoff berth. The story is building ball by ball.",
+      "{batsman} takes a deep breath. {bowler} runs in. The story of this 2026 IPL clash is written one ball at a time."
+    ]
+  }
+};
+
+function generateLiveAgentFallbackInsights(ball, winProbability, pressureIndex, scoreboard, scenarioId) {
+  const isWicket = ball.event === "wicket";
+  const requiredRR = parseFloat(scoreboard.requiredRR);
+  const runsNeeded = scoreboard.runsNeeded;
+  const score = scoreboard.score;
+  const target = scoreboard.target;
+  const batsman = ball.batsman;
+  const bowler = ball.bowler;
+  const ballsRemaining = scoreboard.ballsRemaining;
+
+  let category = "general";
+  if (isWicket) {
+    category = "wicketFell";
+  } else if (requiredRR > 11.5) {
+    category = "highRate";
+  }
+
+  const database = (scenarioId === "mi_vs_rr_2026") ? MI_VS_RR_INSIGHTS : LIVE_INSIGHTS_DATABASE;
+
+  const analystList = database.analyst[category];
+  const scoutList = database.scout[category];
+  const narratorList = database.narrator[category];
+
+  const analystCounter = liveAgentCounters.analyst % analystList.length;
+  const scoutCounter = liveAgentCounters.scout % scoutList.length;
+  const narratorCounter = liveAgentCounters.narrator % narratorList.length;
+
+  liveAgentCounters.analyst++;
+  liveAgentCounters.scout++;
+  liveAgentCounters.narrator++;
+
+  const replacePlaceholders = (text) => {
+    return text
+      .replace(/{requiredRR}/g, requiredRR.toFixed(2))
+      .replace(/{winProbability}/g, winProbability)
+      .replace(/{pressureIndex}/g, pressureIndex)
+      .replace(/{score}/g, score)
+      .replace(/{target}/g, target)
+      .replace(/{batsman}/g, batsman)
+      .replace(/{bowler}/g, bowler)
+      .replace(/{ballsRemaining}/g, ballsRemaining)
+      .replace(/{runsNeeded}/g, runsNeeded);
+  };
+
+  return {
+    analyst: replacePlaceholders(analystList[analystCounter]),
+    scout: replacePlaceholders(scoutList[scoutCounter]),
+    narrator: replacePlaceholders(narratorList[narratorCounter])
+  };
+}
+
 // Function to call the Gemini API via standard HTTP request
 async function callGeminiAgent(apiKey, agentRole, systemPrompt, userMessage) {
   try {
@@ -201,7 +369,20 @@ async function processBallEvent(ball, scenarioId) {
 
   // 2. Win Probability Heuristic (with scenario overrides for hyper-realism)
   let winProbability = 50;
-  if (scenarioId === "ind_vs_pak_2022") {
+  if (activeMode === "live") {
+    if (runsNeeded <= 0) winProbability = 100;
+    else if (ballsRemaining <= 0 || wickets >= 10) winProbability = 0;
+    else {
+      const requiredRR = (runsNeeded / ballsRemaining) * 6;
+      const wicketsLeft = 10 - wickets;
+      if (requiredRR > 36) winProbability = 1;
+      else {
+        const rDiff = requiredRR - 8;
+        winProbability = 50 - (rDiff * 4) + (wicketsLeft - 5) * 8;
+        winProbability = Math.max(1, Math.min(99, Math.round(winProbability)));
+      }
+    }
+  } else if (scenarioId === "ind_vs_pak_2022") {
     const probCurve = {
       "17.1": 21, "17.2": 19, "17.3": 26, "17.4": 32, "17.5": 34, "17.6": 41,
       "18.1": 38, "18.2": 34, "18.3": 24, "18.4": 15, "18.5": 38, "18.6": 55,
@@ -330,11 +511,19 @@ async function processBallEvent(ball, scenarioId) {
     scout: { value: Math.round(80 - (pressureIndex / 5)), stability: "STABLE", certainty: "ALIGNED" }
   };
 
+  const currentScoreboard = {
+    requiredRR: ballsRemaining > 0 ? ((runsNeeded / ballsRemaining) * 6) : 0,
+    runsNeeded: runsNeeded,
+    score: score,
+    target: target,
+    ballsRemaining: ballsRemaining
+  };
+
   if (activeApiKey) {
     console.log("Calling Gemini API for live match experience...");
     const sharedText = `
-      Match: ${currentScenario.name} at ${currentScenario.venue}
-      Batting Team: ${currentScenario.battingTeam}, Bowling Team: ${currentScenario.bowlingTeam}
+      Match: ${currentScenario ? currentScenario.name : "Live Simulation Match"} at ${currentScenario ? currentScenario.venue : "Live Stadium"}
+      Batting Team: ${currentScenario ? currentScenario.battingTeam : "Batting Team"}, Bowling Team: ${currentScenario ? currentScenario.bowlingTeam : "Bowling Team"}
       Score: ${score}, Overs: ${over}, Batsman: ${ball.batsman}, Bowler: ${ball.bowler}
       Last ball event: ${ball.event} (runs scored: ${runs})
       Raw Ball Commentary: ${ball.commentary}
@@ -352,12 +541,17 @@ Task: Explain the statistical changes and win probability shift. Make it punchy.
     if (analystInsight) {
       sharedMemory.analystLast = analystInsight;
     } else {
-      const key = over.toFixed(1);
-      const scenarioDisagreements = DISAGREEMENTS[scenarioId];
-      if (scenarioDisagreements && scenarioDisagreements[key]) {
-        analystInsight = scenarioDisagreements[key].analyst;
+      if (activeMode === "live") {
+        const liveFallback = generateLiveAgentFallbackInsights(ball, winProbability, pressureIndex, currentScoreboard, scenarioId);
+        analystInsight = liveFallback.analyst;
       } else {
-        analystInsight = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState).analyst;
+        const key = over.toFixed(1);
+        const scenarioDisagreements = DISAGREEMENTS[scenarioId];
+        if (scenarioDisagreements && scenarioDisagreements[key]) {
+          analystInsight = scenarioDisagreements[key].analyst;
+        } else {
+          analystInsight = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState).analyst;
+        }
       }
     }
 
@@ -370,12 +564,17 @@ Task: Recommend matchups, bowling strategies, or fielding changes based on the s
     if (scoutInsight) {
       sharedMemory.scoutLast = scoutInsight;
     } else {
-      const key = over.toFixed(1);
-      const scenarioDisagreements = DISAGREEMENTS[scenarioId];
-      if (scenarioDisagreements && scenarioDisagreements[key]) {
-        scoutInsight = scenarioDisagreements[key].scout;
+      if (activeMode === "live") {
+        const liveFallback = generateLiveAgentFallbackInsights(ball, winProbability, pressureIndex, currentScoreboard, scenarioId);
+        scoutInsight = liveFallback.scout;
       } else {
-        scoutInsight = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState).scout;
+        const key = over.toFixed(1);
+        const scenarioDisagreements = DISAGREEMENTS[scenarioId];
+        if (scenarioDisagreements && scenarioDisagreements[key]) {
+          scoutInsight = scenarioDisagreements[key].scout;
+        } else {
+          scoutInsight = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState).scout;
+        }
       }
     }
 
@@ -388,25 +587,37 @@ Task: Craft a dramatic voiceover/commentary on the emotional gravity of this bal
     if (narratorInsight) {
       sharedMemory.narratorLast = narratorInsight;
     } else {
-      narratorInsight = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState).narrator;
+      if (activeMode === "live") {
+        const liveFallback = generateLiveAgentFallbackInsights(ball, winProbability, pressureIndex, currentScoreboard, scenarioId);
+        narratorInsight = liveFallback.narrator;
+      } else {
+        narratorInsight = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState).narrator;
+      }
     }
 
   } else {
-    // Heuristic offline mode with explicit debate/disagreement mapping
-    const key = over.toFixed(1);
-    const scenarioDisagreements = DISAGREEMENTS[scenarioId];
-    if (scenarioDisagreements && scenarioDisagreements[key]) {
-      analystInsight = scenarioDisagreements[key].analyst;
-      scoutInsight = scenarioDisagreements[key].scout;
+    if (activeMode === "live") {
+      const liveFallback = generateLiveAgentFallbackInsights(ball, winProbability, pressureIndex, currentScoreboard, scenarioId);
+      analystInsight = liveFallback.analyst;
+      scoutInsight = liveFallback.scout;
+      narratorInsight = liveFallback.narrator;
     } else {
+      // Heuristic offline mode with explicit debate/disagreement mapping
+      const key = over.toFixed(1);
+      const scenarioDisagreements = DISAGREEMENTS[scenarioId];
+      if (scenarioDisagreements && scenarioDisagreements[key]) {
+        analystInsight = scenarioDisagreements[key].analyst;
+        scoutInsight = scenarioDisagreements[key].scout;
+      } else {
+        const fallback = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState);
+        analystInsight = fallback.analyst;
+        scoutInsight = fallback.scout;
+      }
+      
+      // Narrator fallback
       const fallback = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState);
-      analystInsight = fallback.analyst;
-      scoutInsight = fallback.scout;
+      narratorInsight = fallback.narrator;
     }
-    
-    // Narrator fallback
-    const fallback = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState);
-    narratorInsight = fallback.narrator;
   }
 
   // Calculate if a tactical disagreement/dissent is occurring on this ball
@@ -448,6 +659,13 @@ Task: Craft a dramatic voiceover/commentary on the emotional gravity of this bal
   };
 
   matchHistory.push(currentHistoryItem);
+
+  // Write match history log to file (Analyst file write access requirement)
+  try {
+    fs.writeFileSync("match_history_log.json", JSON.stringify(matchHistory, null, 2));
+  } catch (err) {
+    console.error("Failed to write match history log to file:", err);
+  }
 
   // 7. Package and return full state update
   return {
@@ -497,6 +715,62 @@ function broadcast(message) {
   });
 }
 
+async function scheduleNextBall() {
+  if (simulationTimeout) {
+    clearTimeout(simulationTimeout);
+    simulationTimeout = null;
+  }
+
+  // Jitter variation: 85% to 115% of simulation speed
+  const jitterFactor = 0.85 + Math.random() * 0.3;
+  const delay = simulationSpeed * jitterFactor;
+
+  simulationTimeout = setTimeout(async () => {
+    if (activeMode === "live") {
+      const nextBall = liveEngine.generateNextBall();
+      if (!nextBall) {
+        console.log("Live simulation complete.");
+        broadcast({ type: "SIMULATION_COMPLETE" });
+        return;
+      }
+      
+      const updatePayload = await processBallEvent(nextBall, currentScenarioId);
+      updatePayload.timestamp = new Date().toISOString();
+      updatePayload.telemetryLatency = Math.round(50 + Math.random() * 150); // Live latency jitter: 50-200ms
+      updatePayload.activeMode = "live";
+      broadcast(updatePayload);
+      
+      if (liveEngine.currentRuns >= liveEngine.target || liveEngine.wickets >= 10 || liveEngine.ballsBowled >= 120) {
+        console.log("Live match concluded.");
+        broadcast({ type: "SIMULATION_COMPLETE" });
+      } else {
+        scheduleNextBall();
+      }
+    } else {
+      currentBallIndex++;
+      if (currentBallIndex >= currentScenario.balls.length) {
+        console.log("Historical simulation complete.");
+        broadcast({ type: "SIMULATION_COMPLETE" });
+        return;
+      }
+      
+      const ballData = currentScenario.balls[currentBallIndex];
+      const updatePayload = await processBallEvent(ballData, currentScenarioId);
+      updatePayload.timestamp = new Date().toISOString();
+      updatePayload.telemetryLatency = Math.round(10 + Math.random() * 40); // Replay latency: 10-50ms
+      updatePayload.activeMode = "historical";
+      broadcast(updatePayload);
+      
+      if (currentBallIndex < currentScenario.balls.length - 1) {
+        scheduleNextBall();
+      } else {
+        console.log("Historical match concluded.");
+        broadcast({ type: "SIMULATION_COMPLETE" });
+      }
+    }
+  }, delay);
+}
+
 // WebSocket connections
 wss.on("connection", (ws) => {
   console.log("Client connected to DUGOUT Platform WebSocket");
@@ -523,7 +797,25 @@ wss.on("connection", (ws) => {
           ws.send(JSON.stringify({ type: "API_KEY_CONFIRMED", hasApiKey: !!activeApiKey }));
           break;
 
-        case "START_SIMULATION":
+        case "SET_MODE":
+          activeMode = message.mode; // "live" or "historical"
+          console.log(`Active mode changed to: ${activeMode}`);
+          if (simulationTimeout) {
+            clearTimeout(simulationTimeout);
+            simulationTimeout = null;
+          }
+          currentBallIndex = -1;
+          matchHistory = [];
+          sharedMemory = {
+            timeline: [],
+            analystLast: "",
+            scoutLast: "",
+            narratorLast: ""
+          };
+          broadcast({ type: "MODE_CHANGED", mode: activeMode });
+          break;
+
+        case "START_SIMULATION": {
           const scenarioId = message.scenarioId;
           if (!SCENARIOS[scenarioId]) {
             ws.send(JSON.stringify({ type: "ERROR", message: "Scenario not found" }));
@@ -531,10 +823,13 @@ wss.on("connection", (ws) => {
           }
 
           // Reset Simulation state
-          clearInterval(simulationInterval);
+          if (simulationTimeout) {
+            clearTimeout(simulationTimeout);
+            simulationTimeout = null;
+          }
+          
           currentScenarioId = scenarioId;
           currentScenario = SCENARIOS[scenarioId];
-          currentBallIndex = 0;
           matchHistory = [];
           sharedMemory = {
             timeline: [],
@@ -543,29 +838,51 @@ wss.on("connection", (ws) => {
             narratorLast: ""
           };
 
-          console.log(`Starting simulation for scenario: ${currentScenario.name}`);
-          
-          const initialPayload = await processBallEvent(currentScenario.balls[0], currentScenarioId);
-          broadcast(initialPayload);
+          console.log(`Starting simulation for scenario: ${currentScenario.name} in mode: ${activeMode}`);
 
-          simulationInterval = setInterval(async () => {
-            currentBallIndex++;
-            if (currentBallIndex >= currentScenario.balls.length) {
-              clearInterval(simulationInterval);
-              console.log("Simulation complete.");
-              broadcast({ type: "SIMULATION_COMPLETE" });
-              return;
-            }
-
-            const ballData = currentScenario.balls[currentBallIndex];
-            const updatePayload = await processBallEvent(ballData, currentScenarioId);
-            broadcast(updatePayload);
-
-          }, simulationSpeed);
-
+          if (activeMode === "live") {
+            liveEngine.initialize(scenarioId, currentScenario);
+            const initialBall = {
+              over: currentScenario.startingOvers || 0,
+              batsman: liveEngine.strikerName,
+              bowler: liveEngine.getBowler(),
+              runs: 0,
+              event: "dot",
+              score: `${liveEngine.currentRuns}/${liveEngine.wickets}`,
+              wickets: liveEngine.wickets,
+              shake: false,
+              commentary: `Match ready. Target: ${liveEngine.target} in 20 overs. Starting Live Match Simulation.`,
+              confidence: {
+                analyst: { value: 50, stability: "STABLE", certainty: "CONFIDENT" },
+                scout: { value: 50, stability: "STABLE", certainty: "ALIGNED" }
+              }
+            };
+            const initialPayload = await processBallEvent(initialBall, currentScenarioId);
+            initialPayload.timestamp = new Date().toISOString();
+            initialPayload.telemetryLatency = Math.round(50 + Math.random() * 150);
+            initialPayload.activeMode = "live";
+            broadcast(initialPayload);
+            scheduleNextBall();
+          } else {
+            currentBallIndex = 0;
+            const initialPayload = await processBallEvent(currentScenario.balls[0], currentScenarioId);
+            initialPayload.timestamp = new Date().toISOString();
+            initialPayload.telemetryLatency = Math.round(10 + Math.random() * 40);
+            initialPayload.activeMode = "historical";
+            broadcast(initialPayload);
+            scheduleNextBall();
+          }
           break;
+        }
 
         case "JUMP_TO_BALL": {
+          // If we receive a timeline jump in live mode, switch to historical replay cleanly
+          if (activeMode === "live") {
+            activeMode = "historical";
+            console.log("JUMP_TO_BALL triggered in live mode. Switching to historical replay.");
+            broadcast({ type: "MODE_CHANGED", mode: "historical" });
+          }
+
           const sId = message.scenarioId;
           const targetOver = parseFloat(message.over);
           if (!SCENARIOS[sId]) {
@@ -574,7 +891,10 @@ wss.on("connection", (ws) => {
           }
 
           // Reset and pre-populate simulation history up to target over
-          clearInterval(simulationInterval);
+          if (simulationTimeout) {
+            clearTimeout(simulationTimeout);
+            simulationTimeout = null;
+          }
           currentScenarioId = sId;
           currentScenario = SCENARIOS[sId];
           matchHistory = [];
@@ -622,7 +942,10 @@ wss.on("connection", (ws) => {
         }
 
         case "PAUSE_SIMULATION":
-          clearInterval(simulationInterval);
+          if (simulationTimeout) {
+            clearTimeout(simulationTimeout);
+            simulationTimeout = null;
+          }
           console.log("Simulation paused.");
           broadcast({ type: "SIMULATION_PAUSED" });
           break;
@@ -630,24 +953,17 @@ wss.on("connection", (ws) => {
         case "SET_SPEED":
           simulationSpeed = message.speed;
           console.log(`Speed updated to ${simulationSpeed}ms`);
-          if (simulationInterval && currentScenario && currentBallIndex < currentScenario.balls.length) {
-            clearInterval(simulationInterval);
-            simulationInterval = setInterval(async () => {
-              currentBallIndex++;
-              if (currentBallIndex >= currentScenario.balls.length) {
-                clearInterval(simulationInterval);
-                broadcast({ type: "SIMULATION_COMPLETE" });
-                return;
-              }
-              const ballData = currentScenario.balls[currentBallIndex];
-              const updatePayload = await processBallEvent(ballData, currentScenarioId);
-              broadcast(updatePayload);
-            }, simulationSpeed);
+          if (simulationTimeout) {
+            // Re-schedule immediately with new speed
+            scheduleNextBall();
           }
           break;
 
         case "RESET_SIMULATION":
-          clearInterval(simulationInterval);
+          if (simulationTimeout) {
+            clearTimeout(simulationTimeout);
+            simulationTimeout = null;
+          }
           currentBallIndex = -1;
           matchHistory = [];
           sharedMemory = {
