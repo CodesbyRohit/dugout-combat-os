@@ -34,7 +34,8 @@ const cricbuzzAdapter = new CricbuzzAdapter();
 let currentScenario = null;
 let currentScenarioId = "";
 let currentBallIndex = -1;
-let simulationTimeout = null; // Replaced simulationInterval for jitter support
+let simulationTimeout = null;
+let simulationInterval = null; // Autonomous interval loop
 let simulationSpeed = 3000; // ms per ball
 let matchHistory = [];
 let sharedMemory = {
@@ -456,6 +457,202 @@ async function callGeminiAgent(apiKey, agentRole, systemPrompt, userMessage) {
     console.error(`Network error calling Gemini API for ${agentRole}:`, error);
     return null;
   }
+}
+
+// Function to call the Gemini API for The Umpire Agent in JSON mode
+async function callGeminiUmpireAgent(apiKey, matchState, lastBallDetails) {
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    
+    const systemPrompt = `You are 'The Umpire', the autonomous cricket simulation engine for a live broadcast-grade analytics OS.
+Your task is to generate the outcome of the next logical delivery in this cricket match based on the current context.
+
+Match Context:
+- Batting Team: ${matchState.battingTeam}
+- Bowling Team: ${matchState.bowlingTeam}
+- Target score to chase: ${matchState.target} runs
+- Current Score: ${matchState.currentRuns}/${matchState.wickets}
+- Current Over: ${matchState.over.toFixed(1)} (${matchState.ballsBowled} balls bowled)
+- Striker Batter: ${matchState.striker} (runs: ${matchState.strikerRuns}, balls faced: ${matchState.strikerBalls})
+- Non-Striker Batter: ${matchState.nonStriker}
+- Active Bowler: ${matchState.bowler} (stamina: ${matchState.bowlerStamina}%)
+- Previous Play: ${lastBallDetails || "First ball of the simulation"}
+
+Rules for Realistic Cricket progression:
+1. Do NOT generate consecutive wickets or excessive boundaries unless the state is extreme (e.g. death overs requiring 20 RPO might lead to risk-taking and wickets/sixes).
+2. Runs should be between 0 and 6. A wicket should happen with a realistic 4% probability under normal conditions, increasing to 8% if bowler stamina is low or batsman pressure is high.
+3. Generate realistic polar coordinates for the shot:
+   - 'shotAngle': angle in degrees (0 to 360) where 0 is cover, 90 is keeper, 180 is square leg, 270 is mid-wicket.
+   - 'shotDistance': distance (0 to 115). Dots are close (10-30). Singles/doubles are outfield (40-70). Boundaries (4s) hit the rope (82-88). Sixes clear the rope (95-115).
+4. Provide a brief 1-sentence 'eventDescription' summarizing the action.
+
+You MUST respond with a strict, valid JSON object matching this schema:
+{
+  "runs": number,
+  "isWicket": boolean,
+  "shotAngle": number,
+  "shotDistance": number,
+  "eventDescription": string
+}`;
+
+    const payload = {
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: "Generate the next logical ball outcome." }]
+        }
+      ],
+      systemInstruction: {
+        parts: [{ text: systemPrompt }]
+      },
+      generationConfig: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 200,
+        temperature: 0.8
+      }
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      console.error("Gemini Umpire API returned error:", await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    const outputText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return outputText ? outputText.trim() : null;
+  } catch (error) {
+    console.error("Failed to call Gemini Umpire API:", error);
+    return null;
+  }
+}
+
+function startLiveGenerativeInterval() {
+  if (simulationInterval) {
+    clearInterval(simulationInterval);
+    simulationInterval = null;
+  }
+  if (simulationTimeout) {
+    clearTimeout(simulationTimeout);
+    simulationTimeout = null;
+  }
+
+  // Interval set to 15 seconds
+  simulationInterval = setInterval(async () => {
+    if (liveEngine.allOut || liveEngine.currentRuns >= liveEngine.target || liveEngine.ballsBowled >= 120) {
+      console.log("Generative live match concluded.");
+      broadcast({ type: "SIMULATION_COMPLETE" });
+      clearInterval(simulationInterval);
+      simulationInterval = null;
+      return;
+    }
+
+    let umpireOutcome = null;
+    if (activeApiKey) {
+      const lastPlayText = matchHistory.length > 0 ? 
+        `Over ${matchHistory[matchHistory.length-1].over}: runs: ${matchHistory[matchHistory.length-1].runs}, event: ${matchHistory[matchHistory.length-1].event}, desc: ${matchHistory[matchHistory.length-1].commentary}` : 
+        "First ball of simulation";
+
+      const strikerObj = liveEngine.getStriker();
+      const activeBowler = liveEngine.getBowler();
+
+      const matchStateInfo = {
+        battingTeam: currentScenario.battingTeam,
+        bowlingTeam: currentScenario.bowlingTeam,
+        target: liveEngine.target,
+        currentRuns: liveEngine.currentRuns,
+        wickets: liveEngine.wickets,
+        over: liveEngine.ballsBowled / 6,
+        ballsBowled: liveEngine.ballsBowled,
+        striker: liveEngine.strikerName,
+        strikerRuns: strikerObj ? strikerObj.runs : 0,
+        strikerBalls: strikerObj ? strikerObj.balls : 0,
+        nonStriker: liveEngine.nonStrikerName,
+        bowler: activeBowler,
+        bowlerStamina: liveEngine.bowlerStamina[activeBowler] !== undefined ? Math.round(liveEngine.bowlerStamina[activeBowler]) : 100
+      };
+
+      const rawJson = await callGeminiUmpireAgent(activeApiKey, matchStateInfo, lastPlayText);
+      if (rawJson) {
+        try {
+          umpireOutcome = JSON.parse(rawJson);
+        } catch (e) {
+          console.warn("Malformed JSON received from Umpire, falling back:", e);
+        }
+      }
+    }
+
+    // Fallback generator
+    if (!umpireOutcome || typeof umpireOutcome.runs === 'undefined') {
+      const roll = Math.random();
+      let runs = 0;
+      let isWicket = false;
+      let event = "dot";
+
+      if (roll < 0.35) {
+        runs = 0;
+        event = "dot";
+      } else if (roll < 0.70) {
+        runs = 1;
+        event = "single";
+      } else if (roll < 0.78) {
+        runs = 2;
+        event = "double";
+      } else if (roll < 0.89) {
+        runs = 4;
+        event = "boundary";
+      } else if (roll < 0.95) {
+        runs = 6;
+        event = "six";
+      } else {
+        isWicket = true;
+        event = "wicket";
+      }
+
+      const striker = liveEngine.getStriker();
+      const strikerName = striker ? striker.name : "Batsman";
+      const bowlerName = liveEngine.getBowler();
+      const coords = generateRealisticPolarCoordinates(event, runs);
+      
+      let desc = "";
+      if (isWicket) desc = `${strikerName} is out caught off ${bowlerName}!`;
+      else if (runs === 0) desc = `Solid defensive stroke by ${strikerName} off ${bowlerName}.`;
+      else if (runs === 4) desc = `FOUR! Smacked through covers by ${strikerName}.`;
+      else if (runs === 6) desc = `SIX! Placed high into the stands by ${strikerName}!`;
+      else desc = `${strikerName} picks up ${runs} runs off ${bowlerName}.`;
+
+      umpireOutcome = {
+        runs,
+        isWicket,
+        shotAngle: coords.angle,
+        shotDistance: coords.distance,
+        eventDescription: desc
+      };
+    }
+
+    const simulatedBall = liveEngine.applyUmpireBall(umpireOutcome);
+
+    // Parallel commentary agents
+    const updatePayload = await processBallEvent(simulatedBall, currentScenarioId);
+    liveEngine.lastPressureIndex = updatePayload.telemetry.pressureIndex;
+    updatePayload.timestamp = new Date().toISOString();
+    updatePayload.telemetryLatency = Math.round(50 + Math.random() * 150);
+    updatePayload.activeMode = "live";
+
+    broadcast(updatePayload);
+
+    if (liveEngine.allOut || liveEngine.currentRuns >= liveEngine.target || liveEngine.ballsBowled >= 120) {
+      console.log("Generative live match completed.");
+      broadcast({ type: "SIMULATION_COMPLETE" });
+      clearInterval(simulationInterval);
+      simulationInterval = null;
+    }
+  }, 15000);
 }
 
 // Realistic Polar Coordinate Generator for Wagon Wheel & Canvas Animations
@@ -1068,9 +1265,12 @@ async function scheduleNextBall() {
     simulationTimeout = null;
   }
 
+  if (activeMode === "live") {
+    return;
+  }
+
   // Jitter variation: 85% to 115% of simulation speed
-  const jitterFactor = 0.85 + Math.random() * 0.3;
-  const delay = simulationSpeed * jitterFactor;
+  const delay = simulationSpeed * (0.85 + Math.random() * 0.3);
 
   simulationTimeout = setTimeout(async () => {
     if (activeMode === "live") {
@@ -1155,6 +1355,10 @@ wss.on("connection", async (ws) => {
             clearTimeout(simulationTimeout);
             simulationTimeout = null;
           }
+          if (simulationInterval) {
+            clearInterval(simulationInterval);
+            simulationInterval = null;
+          }
           currentBallIndex = -1;
           matchHistory = [];
           sharedMemory = {
@@ -1218,7 +1422,7 @@ wss.on("connection", async (ws) => {
             initialPayload.telemetryLatency = Math.round(50 + Math.random() * 150);
             initialPayload.activeMode = "live";
             broadcast(initialPayload);
-            scheduleNextBall();
+            startLiveGenerativeInterval();
           } else {
             currentBallIndex = 0;
             const initialPayload = await processBallEvent(currentScenario.balls[0], currentScenarioId);
@@ -1302,6 +1506,10 @@ wss.on("connection", async (ws) => {
             clearTimeout(simulationTimeout);
             simulationTimeout = null;
           }
+          if (simulationInterval) {
+            clearInterval(simulationInterval);
+            simulationInterval = null;
+          }
           console.log("Simulation paused.");
           broadcast({ type: "SIMULATION_PAUSED" });
           break;
@@ -1319,6 +1527,10 @@ wss.on("connection", async (ws) => {
           if (simulationTimeout) {
             clearTimeout(simulationTimeout);
             simulationTimeout = null;
+          }
+          if (simulationInterval) {
+            clearInterval(simulationInterval);
+            simulationInterval = null;
           }
           currentBallIndex = -1;
           matchHistory = [];
