@@ -9,600 +9,86 @@ import audioSynth from './utils/audioSynth';
 import { SCENARIOS } from './utils/scenarios';
 import { processBallEvent, LocalLiveMatchEngine } from './utils/localSimulator';
 import { AgentOrchestrator } from './agents/AgentOrchestrator';
+import WagonWheel from './components/WagonWheel';
+import SatelliteFeed from './components/SatelliteFeed';
+import { useMatchTelemetry } from './hooks/useMatchTelemetry';
+import { sessionDb } from './utils/sessionDb';
 
 export default function App() {
   // Stark OS Boot Sequence State
   const [bootState, setBootState] = useState('locked'); // 'locked' | 'booting' | 'ready'
   const [bootLogs, setBootLogs] = useState([]);
-
-  // WebSocket
-  const wsRef = useRef(null);
-  const [connected, setConnected] = useState(false);
-  
-  // Scenarios
-  const [scenarios, setScenarios] = useState(
-    Object.keys(SCENARIOS).map(key => ({
-      id: key,
-      name: SCENARIOS[key].name,
-      venue: SCENARIOS[key].venue
-    }))
-  );
-  const [selectedScenario, setSelectedScenario] = useState('mi_vs_rr_2026');
-  
-  // Gemini Settings
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [hasApiKey, setHasApiKey] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-
-  // Match State
-  const [matchInfo, setMatchInfo] = useState(null);
-  const [scoreboard, setScoreboard] = useState(null);
-  const [telemetry, setTelemetry] = useState({
-    winProbability: 50,
-    pressureIndex: 10,
-    momentumState: 'Calm',
-    disagreementActive: false
-  });
-  const [matchState, setMatchState] = useState({
-    battingTeam: 'RR',
-    bowlingTeam: 'MI',
-    runs: 119,
-    wickets: 5,
-    over: 12.3,
-    target: null,
-    striker: 'Samson',
-    nonStriker: 'Parag',
-    bowler: 'Bumrah',
-    pressureIndex: 0,
-    momentum: 50,
-    recentBalls: [],
-    winProbability: 50
-  });
-  const [agents, setAgents] = useState({
-    analyst: 'Awaiting match launch. Initiate live match telemetry to invoke the Franchise analyst.',
-    scout: 'Dugout communications standby. Awaiting first ball data to build matchup recommendations.',
-    narrator: 'Melbourne night. Hyderabad heat. Select a scenario and witness the AI experience the match.'
-  });
-  const [timeline, setTimeline] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [simulationStatus, setSimulationStatus] = useState('idle'); // idle | running | paused | complete
-  const [speed, setSpeed] = useState(3000); // ms per ball
-  const [simulationMode, setSimulationMode] = useState('live'); // live | historical
-  const [activeLatency, setActiveLatency] = useState(0);
-  const [activeTimestamp, setActiveTimestamp] = useState(null);
-
-  // Advanced Visual / Audio Effects
-  const [isShaking, setIsShaking] = useState(false);
-  const [replayState, setReplayState] = useState({
-    active: false,
-    over: null
-  });
-
-  // Demo Trigger & Broadcast Focus States
-  const [activeDemoTrigger, setActiveDemoTrigger] = useState(null);
-  const [highlightedAgent, setHighlightedAgent] = useState(null);
-  const [flash, setFlash] = useState({ active: false, color: '', key: 0 });
   const [showPitchPlaybook, setShowPitchPlaybook] = useState(false);
+  const [flash, setFlash] = useState({ active: false, color: '', key: 0 });
+  const [showSatelliteFeed, setShowSatelliteFeed] = useState(true);
 
-  // Local (Offline) Simulator State
-  const localBallIndexRef = useRef(-1);
-  const localHistoryRef = useRef([]);
-  const localTimelineRef = useRef([]);
-  const localIntervalRef = useRef(null);
-  const localLiveEngineRef = useRef(null);
-  const orchestratorRef = useRef(new AgentOrchestrator());
+  // Hook into the Telemetry State Manager Data Pipeline
+  const {
+    connected,
+    scenarios,
+    selectedScenario,
+    setSelectedScenario,
+    hasApiKey,
+    matchInfo,
+    scoreboard,
+    telemetry,
+    agents,
+    timeline,
+    history,
+    bowlerStamina,
+    activeLatency,
+    activeTimestamp,
+    simulationStatus,
+    speed,
+    simulationMode,
+    commentarySync,
+    setCommentarySync,
+    coachOverrideBowler,
+    setCoachOverrideBowler,
+    hasSavedSession,
+    activeHistoryIndex,
+    highlightedAgent,
+    isShaking,
 
-  // Setup WebSocket connection and click listener for audio context
+    handleStart,
+    handlePause,
+    handleReset,
+    handleSetMode,
+    handleSetSpeed,
+    handleSetApiKey: setApiKeyOnHook,
+    handleReplayEvent,
+    handleExitReplay,
+    handleDemoTrigger: triggerDemoOnHook,
+    handleRestoreSession,
+    handleExportSession
+  } = useMatchTelemetry();
+
+  // Setup click listener for audio context initialization
   useEffect(() => {
-    connectWS();
-
     const resumeAudio = () => {
       audioSynth.init();
       document.removeEventListener('click', resumeAudio);
     };
     document.addEventListener('click', resumeAudio);
-
     return () => {
-      if (wsRef.current) wsRef.current.close();
-      if (localIntervalRef.current) clearInterval(localIntervalRef.current);
       document.removeEventListener('click', resumeAudio);
       audioSynth.stop();
     };
   }, []);
 
-  // Update body class mood skin tints based on match pressure index
-  useEffect(() => {
-    const p = telemetry.pressureIndex;
-    let moodClass = 'mood-stable';
-    if (p > 90) moodClass = 'mood-clutch';
-    else if (p > 80) moodClass = 'mood-critical';
-    else if (p > 60) moodClass = 'mood-volatile';
-    else if (p > 35) moodClass = 'mood-alert';
-    
-    document.body.className = moodClass;
-    
-    return () => {
-      document.body.className = '';
-    };
-  }, [telemetry.pressureIndex]);
-
-  const VFX_MS = { boundary: 1600, wicket: 2200, probShift: 1400 };
-
-  const setSpeakerSpotlight = (agentId) => {
-    setHighlightedAgent(agentId);
-    document.querySelectorAll('.agent-row').forEach(r => r.classList.remove('speaker-row'));
-    document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('speaker-active'));
-    if (!agentId) return;
-    document.querySelector(`[data-agent-id="${agentId}"]`)?.classList.add('speaker-row');
-    document.querySelector(`[data-agent-id="${agentId}"] .agent-card`)?.classList.add('speaker-active');
-  };
-
-  const speakAgent = (agentId, text) => {
+  // Text-To-Speech engine call wrapping callback for Stark OS Boot
+  const speakAgent = (agentId, text, onStart, onEnd) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const utterance = new SpeechSynthesisUtterance(text);
-    if (agentId === 'analyst') {
-      utterance.pitch = 0.8;
-      utterance.rate = 0.9;
-    } else if (agentId === 'scout') {
-      utterance.pitch = 1.2;
-      utterance.rate = 1.1;
-    } else if (agentId === 'narrator') {
+    if (agentId === 'narrator') {
       utterance.pitch = 1.0;
       utterance.rate = 1.0;
     }
-    utterance.onstart  = () => setSpeakerSpotlight(agentId);
-    utterance.onend    = () => setSpeakerSpotlight(null);
-    utterance.onerror  = () => setSpeakerSpotlight(null);
+    utterance.onstart = () => { if (onStart) onStart(); };
+    utterance.onend = () => { if (onEnd) onEnd(); };
     window.speechSynthesis.speak(utterance);
-  };
-
-  const applyVFX = (eventType, pressureIndex = 0) => {
-    const body = document.body;
-    const scoreboard = document.querySelector('.scoreboard');
-    const agentCards = [...document.querySelectorAll('.agent-card')];
-    const graph = document.querySelector('.graph-container');
-
-    const flash = (els, cls, ms) => {
-      els.forEach(el => el?.classList.add(cls));
-      setTimeout(() => els.forEach(el => el?.classList.remove(cls)), ms);
-    };
-
-    if (eventType === 'boundary') {
-      flash([body], 'boundary-event', VFX_MS.boundary);
-      flash([scoreboard], 'boundary-event', VFX_MS.boundary);
-    }
-
-    if (eventType === 'wicket') {
-      flash([body, scoreboard, ...agentCards], 'wicket-event', VFX_MS.wicket);
-    }
-
-    if (eventType === 'probShift') {
-      flash([graph], 'probability-shift', VFX_MS.probShift);
-    }
-
-    // Pressure: persistent, not transient
-    const hot = pressureIndex > 75;
-    body.classList.toggle('pressure-critical', hot);
-    agentCards.forEach(c => c.classList.toggle('pressure-critical', hot));
-  };
-
-  const applyMatchUpdate = (data) => {
-    // Trigger visual shake if flagged or on demo moment
-    if (data.shake || data.isDemoMoment) {
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 600);
-    }
-
-    // Play procedural audio based on event & demo moment
-    audioSynth.setPressure(data.telemetry.pressureIndex);
-    
-    if (data.isDemoMoment) {
-      setActiveDemoTrigger(data.demoTriggerId);
-      
-      if (data.demoTriggerId === 'kohli_six_18_5' || data.demoTriggerId === 'kohli_six_18_6') {
-        audioSynth.playSixSwell();
-      } else if (data.demoTriggerId === 'watson_runout_19_5' || data.demoTriggerId === 'malinga_yorker_19_6') {
-        audioSynth.playGlitchImpact();
-      } else if (data.demoTriggerId === 'byes_chaos_19_4') {
-        audioSynth.playWicketGlitch();
-      } else {
-        audioSynth.playWicketGlitch();
-      }
-    } else {
-      setActiveDemoTrigger(null);
-      if (data.scoreboard.lastBallEvent === 'wicket') {
-        audioSynth.playWicketGlitch();
-      } else if (data.scoreboard.lastBallEvent === 'six' || data.scoreboard.lastBallEvent === 'six_noball') {
-        audioSynth.playStadiumCheer();
-      }
-    }
-
-    // Play Victory audio if final ball
-    if (data.scoreboard.over === 19.6) {
-      if (selectedScenario === 'ind_vs_pak_2022' && data.scoreboard.lastBallEvent !== 'wicket') {
-        audioSynth.playVictoryCheer();
-      } else if (selectedScenario === 'mi_vs_csk_2019' && data.scoreboard.lastBallEvent === 'wicket') {
-        audioSynth.playVictoryCheer();
-      }
-    }
-
-    const hasSpeech = typeof window !== 'undefined' && window.speechSynthesis;
-
-    // Broadcast priority focus logic (Fallback if no speech support)
-    if (!hasSpeech) {
-      if (data.scoreboard.lastBallEvent === 'wicket') {
-        setHighlightedAgent('narrator');
-        setTimeout(() => setHighlightedAgent(null), 5000);
-      } else if (data.scoreboard.lastBallEvent === 'six' || data.scoreboard.lastBallEvent === 'six_noball') {
-        setHighlightedAgent('narrator');
-        setTimeout(() => setHighlightedAgent(null), 5000);
-      } else if (data.telemetry.disagreementActive) {
-        setHighlightedAgent('scout');
-        setTimeout(() => setHighlightedAgent(null), 6000);
-      }
-    }
-
-    setMatchInfo(data.matchInfo);
-    setScoreboard(data.scoreboard);
-    setTelemetry(data.telemetry);
-    setAgents(data.agents);
-    setTimeline([...data.timeline]);
-    setHistory([...data.history]);
-
-    setMatchState(prev => {
-      const scoreRuns = data.scoreboard ? parseInt(data.scoreboard.score.split('/')[0]) : prev.runs;
-      const wickets = data.scoreboard ? data.scoreboard.wickets : prev.wickets;
-      const over = data.scoreboard ? data.scoreboard.over : prev.over;
-      const battingTeam = data.matchInfo ? data.matchInfo.battingTeam : prev.battingTeam;
-      const bowlingTeam = data.matchInfo ? data.matchInfo.bowlingTeam : prev.bowlingTeam;
-      const target = data.matchInfo ? data.matchInfo.target : prev.target;
-      const striker = data.scoreboard ? data.scoreboard.batsman : prev.striker;
-      const bowler = data.scoreboard ? data.scoreboard.bowler : prev.bowler;
-      const pressureIndex = data.telemetry ? data.telemetry.pressureIndex : prev.pressureIndex;
-      const momentum = data.telemetry ? data.telemetry.winProbability : prev.momentum;
-
-      return {
-        ...prev,
-        battingTeam,
-        bowlingTeam,
-        runs: scoreRuns,
-        wickets,
-        over,
-        target,
-        striker,
-        bowler,
-        pressureIndex,
-        momentum
-      };
-    });
-
-    // Trigger agent voice text-to-speech personalities
-    if (data.agents && hasSpeech) {
-      const narratorText = typeof data.agents.narrator === 'object' ? data.agents.narrator.text : data.agents.narrator;
-      const analystText = typeof data.agents.analyst === 'object' ? data.agents.analyst.text : data.agents.analyst;
-      const scoutText = typeof data.agents.scout === 'object' ? data.agents.scout.text : data.agents.scout;
-      
-      window.speechSynthesis.cancel(); // Stop current speech on new ball arrival
-      setSpeakerSpotlight(null);
-      
-      // Queue the voices sequentially: Narrator -> Analyst -> Scout
-      if (narratorText) speakAgent('narrator', narratorText);
-      if (analystText) speakAgent('analyst', analystText);
-      if (scoutText) speakAgent('scout', scoutText);
-    }
-
-    // Dynamic cinematic VFX triggers (DOM updates)
-    setTimeout(() => {
-      const lastEvent = data.scoreboard?.lastBallEvent;
-      const isBoundaryEvent = lastEvent === 'six' || lastEvent === 'six_noball' || lastEvent === 'boundary' || lastEvent === 'four';
-      const isWicketEvent = lastEvent === 'wicket';
-      const pressureVal = data.telemetry?.pressureIndex || 0;
-
-      if (isBoundaryEvent) {
-        applyVFX('boundary', pressureVal);
-      } else if (isWicketEvent) {
-        applyVFX('wicket', pressureVal);
-      } else {
-        applyVFX(null, pressureVal);
-      }
-
-      if (data.history && data.history.length >= 2) {
-        const current = data.history[data.history.length - 1].winProbability;
-        const prev = data.history[data.history.length - 2].winProbability;
-        if (Math.abs(current - prev) > 5) {
-          applyVFX('probShift', pressureVal);
-        }
-      }
-    }, 50);
-
-    if (data.timestamp) {
-      setActiveTimestamp(data.timestamp);
-    }
-    if (data.telemetryLatency) {
-      setActiveLatency(data.telemetryLatency);
-    }
-    if (data.activeMode) {
-      setSimulationMode(data.activeMode);
-    }
-    
-    if (data.isDemoMoment) {
-      setSimulationStatus('paused');
-    } else {
-      setSimulationStatus('running');
-    }
-    
-    // If update arrives and we are replaying, automatically exit replay mode
-    setReplayState({ active: false, over: null });
-  };
-
-  // Local Offline Simulation Actions
-  const localStartSimulation = (scenarioId, overrideSpeed) => {
-    if (localIntervalRef.current) clearTimeout(localIntervalRef.current);
-    
-    const currentSpeed = overrideSpeed !== undefined ? overrideSpeed : speed;
-    const currentScenario = SCENARIOS[scenarioId];
-    if (!currentScenario) return;
-
-    if (localBallIndexRef.current === -1 || simulationStatus === 'complete' || simulationStatus === 'idle') {
-      localBallIndexRef.current = 0;
-      localHistoryRef.current = [];
-      localTimelineRef.current = [];
-      if (simulationMode === 'live') {
-        localLiveEngineRef.current = new LocalLiveMatchEngine();
-        localLiveEngineRef.current.initialize(scenarioId, currentScenario);
-      }
-    }
-
-    const runNextOfflineBall = () => {
-      if (simulationMode === 'live') {
-        const liveEngine = localLiveEngineRef.current;
-        if (!liveEngine) return;
-
-        const nextBall = liveEngine.generateNextBall();
-        if (!nextBall) {
-          setSimulationStatus('complete');
-          audioSynth.setPressure(0);
-          return;
-        }
-
-        const update = processBallEvent(nextBall, scenarioId, localHistoryRef.current, { timeline: localTimelineRef.current }, 'live');
-        if (update) {
-          update.timestamp = new Date().toISOString();
-          update.telemetryLatency = Math.round(50 + Math.random() * 150);
-          update.activeMode = 'live';
-          applyMatchUpdate(update);
-        }
-
-        if (liveEngine.currentRuns >= liveEngine.target || liveEngine.wickets >= 10 || liveEngine.ballsBowled >= 120) {
-          setSimulationStatus('complete');
-          audioSynth.setPressure(0);
-        } else {
-          const jitterFactor = 0.85 + Math.random() * 0.3;
-          const delay = currentSpeed * jitterFactor;
-          localIntervalRef.current = setTimeout(runNextOfflineBall, delay);
-        }
-      } else {
-        if (localBallIndexRef.current >= currentScenario.balls.length) {
-          setSimulationStatus('complete');
-          audioSynth.setPressure(0);
-          return;
-        }
-
-        const ball = currentScenario.balls[localBallIndexRef.current];
-        const update = processBallEvent(ball, scenarioId, localHistoryRef.current, { timeline: localTimelineRef.current }, 'historical');
-        if (update) {
-          update.timestamp = new Date().toISOString();
-          update.telemetryLatency = Math.round(10 + Math.random() * 40);
-          update.activeMode = 'historical';
-          applyMatchUpdate(update);
-        }
-
-        localBallIndexRef.current++;
-        if (localBallIndexRef.current < currentScenario.balls.length) {
-          const jitterFactor = 0.85 + Math.random() * 0.3;
-          const delay = currentSpeed * jitterFactor;
-          localIntervalRef.current = setTimeout(runNextOfflineBall, delay);
-        } else {
-          setSimulationStatus('complete');
-          audioSynth.setPressure(0);
-        }
-      }
-    };
-
-    runNextOfflineBall();
-  };
-
-  const localPauseSimulation = () => {
-    if (localIntervalRef.current) {
-      clearTimeout(localIntervalRef.current);
-      localIntervalRef.current = null;
-    }
-    setSimulationStatus('paused');
-  };
-
-  const localResetSimulation = () => {
-    if (localIntervalRef.current) {
-      clearTimeout(localIntervalRef.current);
-      localIntervalRef.current = null;
-    }
-    localBallIndexRef.current = -1;
-    localHistoryRef.current = [];
-    localTimelineRef.current = [];
-    localLiveEngineRef.current = null;
-    
-    setSimulationStatus('idle');
-    setScoreboard(null);
-    setMatchInfo(null);
-    setTelemetry({ winProbability: 50, pressureIndex: 10, momentumState: 'Calm', disagreementActive: false });
-    setHighlightedAgent(null);
-    setMatchState({
-      battingTeam: 'RR',
-      bowlingTeam: 'MI',
-      runs: 119,
-      wickets: 5,
-      over: 12.3,
-      target: null,
-      striker: 'Samson',
-      nonStriker: 'Parag',
-      bowler: 'Bumrah',
-      pressureIndex: 0,
-      momentum: 50,
-      recentBalls: [],
-      winProbability: 50
-    });
-    setAgents({
-      analyst: 'Awaiting match launch. Initiate live match telemetry to invoke the Franchise analyst.',
-      scout: 'Dugout communications standby. Awaiting first ball data to build matchup recommendations.',
-      narrator: 'Melbourne night. Hyderabad heat. Select a scenario and witness the AI experience the match.'
-    });
-    setTimeline([]);
-    setHistory([]);
-    setReplayState({ active: false, over: null });
-    setActiveDemoTrigger(null);
-    setActiveTimestamp(null);
-    setActiveLatency(0);
-    audioSynth.setPressure(0);
-  };
-
-  const localJumpToBall = (scenarioId, targetOver, event, triggerId) => {
-    if (localIntervalRef.current) {
-      clearTimeout(localIntervalRef.current);
-      localIntervalRef.current = null;
-    }
-
-    const currentScenario = SCENARIOS[scenarioId];
-    if (!currentScenario) return;
-
-    localHistoryRef.current = [];
-    localTimelineRef.current = [];
-
-    let targetIndex = -1;
-    for (let i = 0; i < currentScenario.balls.length; i++) {
-      const ballData = currentScenario.balls[i];
-      const isMatch = Math.abs(ballData.over - targetOver) < 0.01 && 
-                      (!event || ballData.event === event);
-      
-      if (isMatch) {
-        targetIndex = i;
-        break;
-      } else {
-        processBallEvent(ballData, scenarioId, localHistoryRef.current, { timeline: localTimelineRef.current });
-      }
-    }
-
-    if (targetIndex >= 0) {
-      localBallIndexRef.current = targetIndex;
-      const ballData = currentScenario.balls[targetIndex];
-      const update = processBallEvent(ballData, scenarioId, localHistoryRef.current, { timeline: localTimelineRef.current });
-      if (update) {
-        update.isDemoMoment = true;
-        update.demoTriggerId = triggerId;
-        applyMatchUpdate(update);
-        setSimulationStatus('paused');
-      }
-    } else {
-      console.warn("Ball not found in local scenario:", targetOver);
-    }
-  };
-
-  const connectWS = () => {
-    const ws = new WebSocket('ws://localhost:3001');
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log('Connected to DUGOUT Platform WebSocket');
-      setConnected(true);
-      ws.send(JSON.stringify({
-        type: 'SET_MODE',
-        mode: simulationMode
-      }));
-    };
-
-    ws.onerror = (err) => {
-      console.warn('WebSocket error encountered:', err);
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        switch (data.type) {
-          case 'SYSTEM_READY':
-            setScenarios(data.scenarios);
-            setHasApiKey(data.hasApiKey);
-            break;
-
-          case 'API_KEY_CONFIRMED':
-            setHasApiKey(data.hasApiKey);
-            alert('Gemini API key registered successfully on server.');
-            setShowSettings(false);
-            break;
-
-          case 'MATCH_UPDATE':
-            applyMatchUpdate(data);
-            break;
-
-          case 'MODE_CHANGED':
-            setSimulationMode(data.mode);
-            setSimulationStatus('idle');
-            setScoreboard(null);
-            setMatchInfo(null);
-            setTelemetry({ winProbability: 50, pressureIndex: 10, momentumState: 'Calm', disagreementActive: false });
-            setHighlightedAgent(null);
-            setAgents({
-              analyst: 'Awaiting match launch. Initiate live match telemetry to invoke the Franchise analyst.',
-              scout: 'Dugout communications standby. Awaiting first ball data to build matchup recommendations.',
-              narrator: 'Melbourne night. Hyderabad heat. Select a scenario and witness the AI experience the match.'
-            });
-            setTimeline([]);
-            setHistory([]);
-            setReplayState({ active: false, over: null });
-            setActiveDemoTrigger(null);
-            setActiveTimestamp(null);
-            setActiveLatency(0);
-            audioSynth.setPressure(0);
-            break;
-
-          case 'SIMULATION_PAUSED':
-            setSimulationStatus('paused');
-            break;
-
-          case 'SIMULATION_RESET':
-            setSimulationStatus('idle');
-            setScoreboard(null);
-            setMatchInfo(null);
-            setTelemetry({ winProbability: 50, pressureIndex: 10, momentumState: 'Calm', disagreementActive: false });
-            setHighlightedAgent(null);
-            setAgents({
-              analyst: 'Awaiting match launch. Initiate live match telemetry to invoke the Franchise analyst.',
-              scout: 'Dugout communications standby. Awaiting first ball data to build matchup recommendations.',
-              narrator: 'Melbourne night. Hyderabad heat. Select a scenario and witness the AI experience the match.'
-            });
-            setTimeline([]);
-            setHistory([]);
-            setReplayState({ active: false, over: null });
-            setActiveDemoTrigger(null);
-            audioSynth.setPressure(0);
-            break;
-
-          case 'SIMULATION_COMPLETE':
-            setSimulationStatus('complete');
-            audioSynth.setPressure(0);
-            break;
-
-          case 'ERROR':
-            alert(`Error: ${data.message}`);
-            break;
-        }
-      } catch (err) {
-        console.error('Error parsing WS message:', err);
-      }
-    };
-
-    ws.onclose = () => {
-      console.log('WS Connection closed. Reconnecting...');
-      setConnected(false);
-      setTimeout(connectWS, 3000);
-    };
   };
 
   const handleEngageOS = () => {
@@ -635,188 +121,36 @@ export default function App() {
     }, 3400);
   };
 
-  // Action Handlers
-  const handleSetMode = (mode) => {
-    if (simulationStatus === 'running' || simulationStatus === 'paused') {
-      handleReset();
-    }
-    setSimulationMode(mode);
-    if (connected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'SET_MODE',
-        mode: mode
-      }));
-    } else {
-      localResetSimulation();
-    }
-  };
-
-  const handleStart = () => {
-    // Resume audio context on first click
-    audioSynth.init();
-    setActiveDemoTrigger(null);
-    
-    // Exit replay if active on resume
-    if (replayState.active) {
-      handleExitReplay();
-    }
-
-    if (connected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'START_SIMULATION',
-        scenarioId: selectedScenario
-      }));
-    } else {
-      localStartSimulation(selectedScenario);
-    }
-  };
-
-  const handlePause = () => {
-    if (connected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'PAUSE_SIMULATION' }));
-    } else {
-      localPauseSimulation();
-    }
-  };
-
-  const handleReset = () => {
-    setActiveDemoTrigger(null);
-    if (connected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'RESET_SIMULATION' }));
-    } else {
-      localResetSimulation();
-    }
-  };
-
-  const handleSetSpeed = (newSpeed) => {
-    setSpeed(newSpeed);
-    if (connected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'SET_SPEED',
-        speed: newSpeed
-      }));
-    } else {
-      // If offline and currently running, restart timeout loop with new speed
-      if (simulationStatus === 'running') {
-        if (localIntervalRef.current) {
-          clearTimeout(localIntervalRef.current);
-          localIntervalRef.current = null;
-        }
-        localStartSimulation(selectedScenario, newSpeed);
-      }
-    }
-  };
-
   const handleSetApiKey = () => {
-    if (connected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'SET_API_KEY',
-        apiKey: apiKeyInput
-      }));
-    } else {
-      alert('Offline mode: API Key cannot be synced to server right now. Simulating with high-fidelity telemetry fallbacks.');
-    }
-  };
-
-  // Replay Intelligence Logic
-  const handleReplayEvent = (over) => {
-    // Find matching state in history
-    const matchState = history.find(item => item.over === over);
-    if (!matchState) return;
-
-    // 1. Pause active simulation
-    handlePause();
-
-    // 2. Play transition glitch sound
-    audioSynth.playWicketGlitch();
-
-    // 3. Set display state to historical coordinate
-    setScoreboard({
-      over: matchState.over,
-      score: matchState.score,
-      wickets: matchState.wickets,
-      target: matchInfo?.target || 160,
-      batsman: matchState.batsman,
-      bowler: matchState.bowler,
-      runsNeeded: Math.max(0, (matchInfo?.target || 160) - matchState.runs),
-      ballsRemaining: 120 - (Math.floor(matchState.over) * 6 + Math.round((matchState.over % 1) * 10)),
-      requiredRR: ((Math.max(0, (matchInfo?.target || 160) - matchState.runs) / Math.max(1, 120 - (Math.floor(matchState.over) * 6 + Math.round((matchState.over % 1) * 10)))) * 6).toFixed(2),
-      lastBallEvent: matchState.event,
-      lastBallCommentary: matchState.commentary
-    });
-
-    setTelemetry({
-      winProbability: matchState.winProbability,
-      pressureIndex: matchState.pressureIndex,
-      momentumState: matchState.pressureIndex >= 90 ? 'Clutch Moment' : matchState.event === 'wicket' ? 'Chaos' : 'Calm',
-      disagreementActive: matchState.agents.scout?.dissent || false
-    });
-
-    setAgents(matchState.agents);
-    setReplayState({
-      active: true,
-      over: over
-    });
-
-    // Update audio hum pacing
-    audioSynth.setPressure(matchState.pressureIndex);
-  };
-
-  const handleExitReplay = () => {
-    if (history.length === 0) return;
-    
-    // Restore state to last live ball in history
-    const latestState = history[history.length - 1];
-
-    setScoreboard({
-      over: latestState.over,
-      score: latestState.score,
-      wickets: latestState.wickets,
-      target: matchInfo?.target || 160,
-      batsman: latestState.batsman,
-      bowler: latestState.bowler,
-      runsNeeded: Math.max(0, (matchInfo?.target || 160) - latestState.runs),
-      ballsRemaining: 120 - (Math.floor(latestState.over) * 6 + Math.round((latestState.over % 1) * 10)),
-      requiredRR: ((Math.max(0, (matchInfo?.target || 160) - latestState.runs) / Math.max(1, 120 - (Math.floor(latestState.over) * 6 + Math.round((latestState.over % 1) * 10)))) * 6).toFixed(2),
-      lastBallEvent: latestState.event,
-      lastBallCommentary: latestState.commentary
-    });
-
-    setTelemetry({
-      winProbability: latestState.winProbability,
-      pressureIndex: latestState.pressureIndex,
-      momentumState: latestState.pressureIndex >= 90 ? 'Clutch Moment' : latestState.event === 'wicket' ? 'Chaos' : 'Calm',
-      disagreementActive: latestState.agents.scout?.dissent || false
-    });
-
-    setAgents(latestState.agents);
-    setReplayState({
-      active: false,
-      over: null
-    });
-
-    audioSynth.setPressure(latestState.pressureIndex);
+    setApiKeyOnHook(apiKeyInput);
+    setShowSettings(false);
   };
 
   const handleDemoTrigger = (scenarioId, over, event, triggerId, flashColor) => {
-    audioSynth.init();
-    setSelectedScenario(scenarioId);
-    setActiveDemoTrigger(triggerId);
-    
-    // Trigger local esports flash overlay
-    setFlash({ active: true, color: flashColor, key: Date.now() });
+    triggerDemoOnHook(scenarioId, over, event, triggerId, flashColor, setFlash);
+  };
 
-    if (connected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'JUMP_TO_BALL',
-        scenarioId,
-        over,
-        event,
-        demoTriggerId: triggerId
-      }));
-    } else {
-      localJumpToBall(scenarioId, over, event, triggerId);
-    }
+  // Derive replayState dynamically based on hook values
+  const replayState = {
+    active: activeHistoryIndex !== -1,
+    over: activeHistoryIndex !== -1 && history[activeHistoryIndex] ? history[activeHistoryIndex].over : 0
+  };
+
+  // Derive matchState dynamically based on hook values
+  const matchState = {
+    battingTeam: matchInfo?.battingTeam || 'RR',
+    bowlingTeam: matchInfo?.bowlingTeam || 'MI',
+    runs: scoreboard ? parseInt(scoreboard.score.split('/')[0]) : 119,
+    wickets: scoreboard ? scoreboard.wickets : 5,
+    over: scoreboard ? scoreboard.over : 12.3,
+    target: matchInfo ? matchInfo.target : null,
+    striker: scoreboard ? scoreboard.batsman : 'Samson',
+    nonStriker: scoreboard ? (scoreboard.batsman === 'Samson' ? 'Parag' : 'Samson') : 'Parag',
+    bowler: scoreboard ? scoreboard.bowler : 'Bumrah',
+    pressureIndex: telemetry ? telemetry.pressureIndex : 0,
+    momentum: telemetry ? telemetry.winProbability : 50,
+    recentBalls: [],
+    winProbability: telemetry ? telemetry.winProbability : 50
   };
 
   const coreLoad = Math.min(99, Math.max(30, 32 + Math.round(telemetry.pressureIndex * 0.6) + (history.length % 7)));
@@ -837,10 +171,18 @@ export default function App() {
   const narratorMetric = scoreboard ? (telemetry.pressureIndex > 85 ? 'Clutch Volatility' : telemetry.pressureIndex > 65 ? 'The Tension Mounts' : 'Stable Narrative') : "Ready to Narrate";
   const narratorDetail = scoreboard ? `Shareability: ${Math.min(99, 78 + Math.round(telemetry.pressureIndex * 0.22))}%` : "Shareability: 0%";
 
+  // Psychologist dynamic calculations
+  const psyData = agents?.psychologist;
+  const strikerSt = psyData && typeof psyData === 'object' ? psyData.batterPressure : 50;
+  const bowlerSt = psyData && typeof psyData === 'object' ? psyData.bowlerPressure : 50;
+  const psychologistMetric = scoreboard ? `Pressure: ${strikerSt}%` : "Pressure: Stable";
+  const psychologistDetail = scoreboard ? `Bowler: ${bowlerSt}% stress` : "Diagnostics Core";
+
   // Extract texts from agents
   const analystText = agents?.analyst ? (typeof agents.analyst === 'object' ? agents.analyst.text : agents.analyst) : 'Awaiting simulation data...';
   const scoutText = agents?.scout ? (typeof agents.scout === 'object' ? agents.scout.text : agents.scout) : 'Awaiting simulation data...';
   const narratorText = agents?.narrator ? (typeof agents.narrator === 'object' ? agents.narrator.text : agents.narrator) : 'Awaiting simulation data...';
+  const psychologistText = agents?.psychologist ? (typeof agents.psychologist === 'object' ? agents.psychologist.text : agents.psychologist) : 'Awaiting psychological diagnostics flow...';
 
   const isBoundary = scoreboard && (
     scoreboard.lastBallEvent === 'six' || 
@@ -911,7 +253,7 @@ export default function App() {
             <span>🔴 LIVE MI vs RR - IPL 2026</span>
           </div>
           <span className="body-text" style={{ marginTop: '4px', fontSize: '13px' }}>
-            May 24 | Wankhede Stadium | Probabilistic Simulation Engine
+            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} | Wankhede Stadium | Probabilistic Simulation Engine
           </span>
         </div>
 
@@ -989,6 +331,39 @@ export default function App() {
         marginTop: '-0.5rem'
       }}>
         “Most AI systems generate answers. DUGOUT generates interpretation. It understands pressure, momentum, collapse, tactical intent, and emotional turning points in real time.”
+      </div>
+
+      {/* 🔴 SATELLITE BROADCAST INTEL (LIVE MATCH MONITOR) */}
+      <div className="panel-card" style={{ marginTop: '8px', borderLeft: '4px solid var(--alert-critical)' }}>
+        <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <div className="panel-title-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Zap size={18} style={{ color: 'var(--alert-critical)' }} />
+            <h3 className="panel-title" style={{ color: '#fff', fontSize: '14px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              📡 LIVE SATELLITE BROADCAST FEED // SOURCE: STARK-SAT-04
+            </h3>
+          </div>
+          <button 
+            className="control-btn" 
+            onClick={() => setShowSatelliteFeed(!showSatelliteFeed)}
+            style={{ padding: '0.2rem 0.5rem', fontSize: '11px', textTransform: 'uppercase' }}
+          >
+            {showSatelliteFeed ? "Mute Feed Video" : "Lock Feed Video"}
+          </button>
+        </div>
+
+        {showSatelliteFeed && (
+          <SatelliteFeed
+            scoreboard={scoreboard}
+            telemetry={telemetry}
+            agents={agents}
+            shot={history[history.length - 1]?.shot}
+            fielders={history[history.length - 1]?.fielders || []}
+            highlightedAgent={highlightedAgent}
+            historyLength={history.length}
+            selectedScenario={selectedScenario}
+            speed={speed}
+          />
+        )}
       </div>
 
       {/* Collapsible Pitch Playbook */}
@@ -1071,6 +446,18 @@ export default function App() {
                 {hasApiKey ? '● Live Gemini Model Mode Enabled' : '○ Offline Sim Mode Enabled'}
               </span>
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '8px' }}>
+              <input 
+                type="checkbox" 
+                id="commentary-sync-checkbox"
+                checked={commentarySync} 
+                onChange={(e) => setCommentarySync(e.target.checked)}
+                disabled={speed === 350}
+              />
+              <label htmlFor="commentary-sync-checkbox" style={{ fontSize: '0.85rem', color: '#fff', cursor: 'pointer' }}>
+                Enable Commentary Sync Mode (Sequential Speech pacing)
+              </label>
+            </div>
           </div>
         </div>
       )}
@@ -1112,6 +499,17 @@ export default function App() {
               <RotateCcw size={16} />
               Reset
             </button>
+
+            {hasSavedSession && (
+              <button className="control-btn active" onClick={handleRestoreSession} style={{ borderColor: 'var(--accent-psychologist)', color: '#fff' }}>
+                <RotateCw size={14} />
+                Restore Grid
+              </button>
+            )}
+
+            <button className="control-btn" onClick={handleExportSession} disabled={history.length === 0} style={{ marginLeft: '8px' }}>
+              Export Replay
+            </button>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '1rem' }}>
@@ -1119,6 +517,37 @@ export default function App() {
             <button className={`control-btn ${speed === 2000 ? 'active' : ''}`} onClick={() => handleSetSpeed(2000)}>1.5x</button>
             <button className={`control-btn ${speed === 1000 ? 'active' : ''}`} onClick={() => handleSetSpeed(1000)}>2x</button>
             <button className={`control-btn ${speed === 350 ? 'active' : ''}`} onClick={() => handleSetSpeed(350)}>Turbo</button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '1.5rem' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Coach Override:</span>
+            <select
+              className="dropdown-select"
+              value={coachOverrideBowler}
+              onChange={(e) => {
+                setCoachOverrideBowler(e.target.value);
+                if (localLiveEngineRef.current) {
+                  localLiveEngineRef.current.coachOverrideBowler = e.target.value || null;
+                }
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({
+                    type: 'SET_COACH_OVERRIDE',
+                    bowler: e.target.value || null
+                  }));
+                }
+              }}
+              style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: '#fff', fontSize: '12px', padding: '4px 8px' }}
+            >
+              <option value="">Auto Rotation</option>
+              {(SCENARIOS[selectedScenario]?.balls
+                ? [...new Set(SCENARIOS[selectedScenario].balls.map(b => b.bowler))]
+                : (selectedScenario === 'mi_vs_rr_2026' ? ["Sandeep Sharma", "Yuzvendra Chahal", "Avesh Khan"] :
+                   selectedScenario === 'mi_vs_csk_2019' ? ["Lasith Malinga", "Jasprit Bumrah", "Krunal Pandya"] :
+                   ["Shaheen Afridi", "Haris Rauf", "Mohammad Nawaz"])
+              ).map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -1213,6 +642,22 @@ export default function App() {
             isWicket={isWicket}
             isAnySpeaking={highlightedAgent !== null}
           />
+
+          {/* Psychologist Card */}
+          <AgentRow 
+            name="psychologist"
+            title="Psychologist"
+            metric={psychologistMetric}
+            detail={psychologistDetail}
+            color="var(--accent-psychologist)"
+            icon={Cpu}
+            text={psychologistText}
+            isActive={highlightedAgent === 'psychologist'}
+            isDissent={scoreboard && (agents.psychologist?.dissent || (strikerSt > 75 && telemetry.winProbability > 70))}
+            isBoundary={isBoundary}
+            isWicket={isWicket}
+            isAnySpeaking={highlightedAgent !== null}
+          />
         </div>
 
         {/* CENTER COLUMN: Match Heart */}
@@ -1244,6 +689,7 @@ export default function App() {
             <WinProbabilityGraph 
               history={history}
               matchInfo={matchInfo}
+              selectedHistoryIndex={activeHistoryIndex}
             />
           </div>
 
@@ -1261,35 +707,41 @@ export default function App() {
           <div className="momentum-gauge-container" style={{ width: '100%' }}>
             {/* Pressure Index Gauge */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 auto 16px' }}>
-              <div 
-                className={`pressure-gauge ${getPressureLevel(telemetry.pressureIndex)}`}
-                style={{
-                  width: '120px',
-                  height: '120px',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexDirection: 'column',
-                  border: '3px solid var(--border-subtle)',
-                  position: 'relative',
-                  background: 'rgba(15, 21, 53, 0.5)'
-                }}
-              >
-                <div className="pressure-value" style={{ fontSize: '28px', fontWeight: '800' }}>
-                  {telemetry.pressureIndex}%
-                </div>
-                
-                {/* Concentric thin circles for F1 telemetry vibe */}
-                <div style={{
-                  position: 'absolute',
-                  width: '112%',
-                  height: '112%',
-                  border: '1px solid rgba(255, 255, 255, 0.04)',
-                  borderRadius: '50%',
-                  pointerEvents: 'none'
-                }} />
-              </div>
+              {(() => {
+                const currentBowlerStamina = scoreboard ? (bowlerStamina[scoreboard.bowler] !== undefined ? bowlerStamina[scoreboard.bowler] : 100) : 100;
+                const isBowlerFatigued = currentBowlerStamina < 40;
+                return (
+                  <div 
+                    className={`pressure-gauge ${getPressureLevel(telemetry.pressureIndex)} ${isBowlerFatigued ? 'reactor-fatigued' : ''}`}
+                    style={{
+                      width: '120px',
+                      height: '120px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'column',
+                      border: '3px solid var(--border-subtle)',
+                      position: 'relative',
+                      background: 'rgba(15, 21, 53, 0.5)'
+                    }}
+                  >
+                    <div className="pressure-value" style={{ fontSize: '28px', fontWeight: '800' }}>
+                      {telemetry.pressureIndex}%
+                    </div>
+                    
+                    {/* Concentric thin circles for F1 telemetry vibe */}
+                    <div style={{
+                      position: 'absolute',
+                      width: '112%',
+                      height: '112%',
+                      border: '1px solid rgba(255, 255, 255, 0.04)',
+                      borderRadius: '50%',
+                      pointerEvents: 'none'
+                    }} />
+                  </div>
+                );
+              })()}
               <div style={{ fontSize: "12px", fontWeight: "700", textAlign: "center", textTransform: 'uppercase', letterSpacing: '1px', color: 
                 getPressureLevel(telemetry.pressureIndex) === 'calm' ? 'var(--accent-analyst)' :
                 getPressureLevel(telemetry.pressureIndex) === 'alert' ? '#FFB800' : 'var(--alert-critical)'
@@ -1347,7 +799,7 @@ export default function App() {
             {scoreboard && (
               <div style={{ marginTop: '24px', width: '100%', background: 'rgba(15,21,53,0.5)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
-                  Active Duel
+                  Active Duel & Fatigue
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
@@ -1360,6 +812,41 @@ export default function App() {
                     <span style={{ color: 'var(--text-secondary)' }}>Bowling</span>
                   </div>
                 </div>
+
+                {/* Bowler stamina bar */}
+                {(() => {
+                  const currentBowlerStamina = bowlerStamina[scoreboard.bowler] !== undefined ? bowlerStamina[scoreboard.bowler] : 100;
+                  return (
+                    <div style={{ marginTop: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                        <span>Bowler Stamina</span>
+                        <span style={{ color: currentBowlerStamina < 40 ? 'var(--alert-critical)' : 'var(--accent-scout)', fontWeight: 'bold' }}>
+                          {Math.round(currentBowlerStamina)}%
+                        </span>
+                      </div>
+                      <div style={{ height: '6px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${currentBowlerStamina}%`,
+                          height: '100%',
+                          background: currentBowlerStamina < 40 ? 'var(--alert-critical)' : 'var(--accent-scout)',
+                          borderRadius: '3px',
+                          transition: 'width 0.3s ease'
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Wagon Wheel card */}
+            {scoreboard && (
+              <div className="panel-card" style={{ marginTop: '24px', background: 'rgba(15,21,53,0.5)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-subtle)', width: '100%' }}>
+                <WagonWheel 
+                  shots={history.filter(h => h.batsman === scoreboard.batsman).map(h => h.shot).filter(Boolean)} 
+                  fielders={history[history.length - 1]?.fielders || []}
+                  batsmanName={scoreboard.batsman} 
+                />
               </div>
             )}
           </div>
