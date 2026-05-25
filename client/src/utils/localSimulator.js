@@ -44,6 +44,20 @@ const COMMENTARY_TEMPLATES = {
 
 const TEMPLATE_COUNTERS = { dot: 0, single: 0, double: 0, boundary: 0, six: 0, wicket: 0 };
 
+export const FIELDER_POSITIONS = [
+  { angle: 30, distance: 75, label: "Deep Extra Cover" },
+  { angle: 75, distance: 80, label: "Deep Point" },
+  { angle: 120, distance: 45, label: "Backward Point" },
+  { angle: 150, distance: 75, label: "Third Man" },
+  { angle: 210, distance: 80, label: "Deep Fine Leg" },
+  { angle: 250, distance: 75, label: "Deep Mid-Wicket" },
+  { angle: 285, distance: 80, label: "Long-on" },
+  { angle: 330, distance: 85, label: "Long-off" },
+  { angle: 0, distance: 35, label: "Cover" },
+  { angle: 180, distance: 25, label: "Square Leg" },
+  { angle: 90, distance: 15, label: "Wicketkeeper" }
+];
+
 export class LocalLiveMatchEngine {
   constructor() {
     this.reset();
@@ -74,6 +88,19 @@ export class LocalLiveMatchEngine {
     this.currentBowlerIndex = 0;
     this.ballsSinceWicket = 0;
     this.allOut = false;
+
+    // v4.0 variables
+    this.bowlerStamina = {
+      "Shaheen Afridi": 100, "Haris Rauf": 100, "Mohammad Nawaz": 100,
+      "Lasith Malinga": 100, "Jasprit Bumrah": 100, "Krunal Pandya": 100,
+      "Sandeep Sharma": 100, "Yuzvendra Chahal": 100, "Avesh Khan": 100
+    };
+    this.batsmanDotStreak = {};
+    this.batsmanRecentRuns = {};
+    this.batsmanBoundaryDrought = {};
+    this.batsmanShots = {};
+    this.coachOverrideBowler = null;
+    this.lastPressureIndex = 50;
   }
 
   initialize(scenarioId, scenario) {
@@ -83,6 +110,14 @@ export class LocalLiveMatchEngine {
     this.ballsBowled = (scenario.startingOvers || 0) * 6;
     this.allOut = false;
     this.ballsSinceWicket = 0;
+    this.coachOverrideBowler = null;
+    this.lastPressureIndex = 50;
+
+    // Reset psychologist and wagon wheel
+    this.batsmanDotStreak = {};
+    this.batsmanRecentRuns = {};
+    this.batsmanBoundaryDrought = {};
+    this.batsmanShots = {};
 
     if (scenarioId === "mi_vs_csk_2019") {
       this.strikerName = "Shane Watson";
@@ -131,6 +166,12 @@ export class LocalLiveMatchEngine {
       this.bowlers = ["Shaheen Afridi", "Haris Rauf", "Mohammad Nawaz"];
     }
     this.currentBowlerIndex = 0;
+
+    // Reset stamina for scenario bowlers to 100
+    this.bowlerStamina = {};
+    this.bowlers.forEach(b => {
+      this.bowlerStamina[b] = 100;
+    });
   }
 
   getStriker() {
@@ -148,10 +189,142 @@ export class LocalLiveMatchEngine {
   }
 
   getBowler() {
+    if (this.coachOverrideBowler) return this.coachOverrideBowler;
     const overNum = Math.floor(this.ballsBowled / 6);
-    if (overNum === 17) return this.bowlers[0]; // Shaheen Afridi
-    if (overNum === 18) return this.bowlers[1]; // Haris Rauf
-    return this.bowlers[2]; // Mohammad Nawaz
+    if (this.bowlers.length === 3) {
+      if (overNum === 17) return this.bowlers[0]; // Shaheen Afridi / Sandeep / Malinga
+      if (overNum === 18) return this.bowlers[1]; // Haris Rauf / Chahal / Bumrah
+      return this.bowlers[2]; // Mohammad Nawaz / Avesh / Krunal
+    }
+    const idx = overNum % this.bowlers.length;
+    return this.bowlers[idx];
+  }
+
+  clone() {
+    const copy = new LocalLiveMatchEngine();
+    copy.target = this.target;
+    copy.currentRuns = this.currentRuns;
+    copy.wickets = this.wickets;
+    copy.ballsBowled = this.ballsBowled;
+    copy.strikerName = this.strikerName;
+    copy.nonStrikerName = this.nonStrikerName;
+    copy.ballsSinceWicket = this.ballsSinceWicket;
+    copy.allOut = this.allOut;
+    copy.bowlerStamina = { ...this.bowlerStamina };
+    copy.lastPressureIndex = this.lastPressureIndex;
+
+    copy.batsmen = this.batsmen.map(b => ({ ...b }));
+    copy.remainingBatsmen = [...this.remainingBatsmen];
+    copy.bowlers = [...this.bowlers];
+    
+    // Copy psychologist states
+    copy.batsmanDotStreak = { ...this.batsmanDotStreak };
+    copy.batsmanBoundaryDrought = { ...this.batsmanBoundaryDrought };
+    copy.batsmanRecentRuns = {};
+    Object.keys(this.batsmanRecentRuns).forEach(k => {
+      copy.batsmanRecentRuns[k] = [...this.batsmanRecentRuns[k]];
+    });
+
+    return copy;
+  }
+
+  simulateBranch(strategy, ballsAhead = 6) {
+    const tempEngine = this.clone();
+    const probabilitiesList = [];
+
+    for (let i = 0; i < ballsAhead; i++) {
+      if (tempEngine.ballsBowled >= 120 || tempEngine.wickets >= 10 || tempEngine.currentRuns >= tempEngine.target) {
+        // Match ended, push final win probability
+        probabilitiesList.push(tempEngine.currentRuns >= tempEngine.target ? 100 : 0);
+        continue;
+      }
+
+      // Base Probabilities modified by strategy
+      let probs = {
+        dot: 0.28,
+        single: 0.38,
+        double: 0.12,
+        boundary: 0.12,
+        six: 0.06,
+        wicket: 0.04
+      };
+
+      if (strategy === "alpha") {
+        // Aggressive
+        probs.six += 0.10;
+        probs.boundary += 0.08;
+        probs.wicket += 0.06;
+        probs.dot = Math.max(0.05, probs.dot - 0.12);
+        probs.single = Math.max(0.05, probs.single - 0.05);
+      } else if (strategy === "beta") {
+        // Conservative
+        probs.single += 0.15;
+        probs.dot += 0.05;
+        probs.boundary = Math.max(0.02, probs.boundary - 0.10);
+        probs.six = Math.max(0.01, probs.six - 0.05);
+        probs.wicket = Math.max(0.01, probs.wicket - 0.03);
+      } else if (strategy === "gamma") {
+        // Volatile
+        probs.six += 0.15;
+        probs.wicket += 0.08;
+        probs.single = Math.max(0.05, probs.single - 0.10);
+        probs.dot = Math.max(0.05, probs.dot - 0.05);
+        probs.double = Math.max(0.02, probs.double - 0.04);
+        probs.boundary = Math.max(0.02, probs.boundary - 0.04);
+      }
+
+      // Normalization
+      const sum = Object.values(probs).reduce((a, b) => a + b, 0);
+      Object.keys(probs).forEach(k => { probs[k] = probs[k] / sum; });
+
+      const roll = Math.random();
+      let accumulated = 0;
+      let outcome = "dot";
+      for (const [event, prob] of Object.entries(probs)) {
+        accumulated += prob;
+        if (roll <= accumulated) {
+          outcome = event;
+          break;
+        }
+      }
+
+      tempEngine.ballsBowled++;
+      let runsScored = 0;
+      let isWicket = false;
+      if (outcome === "single") runsScored = 1;
+      else if (outcome === "double") runsScored = 2;
+      else if (outcome === "boundary") runsScored = 4;
+      else if (outcome === "six") runsScored = 6;
+      else if (outcome === "wicket") isWicket = true;
+
+      tempEngine.currentRuns = Math.min(tempEngine.target, tempEngine.currentRuns + runsScored);
+      if (isWicket) {
+        tempEngine.wickets++;
+        if (tempEngine.wickets >= 10) tempEngine.allOut = true;
+      }
+
+      // Calculate future win probability heuristic
+      let winProbability = 50;
+      const futureRunsNeeded = Math.max(0, tempEngine.target - tempEngine.currentRuns);
+      const futureBallsRemaining = Math.max(0, 120 - tempEngine.ballsBowled);
+
+      if (futureRunsNeeded <= 0) winProbability = 100;
+      else if (futureBallsRemaining <= 0 || tempEngine.wickets >= 10) winProbability = 0;
+      else {
+        const requiredRR = (futureRunsNeeded / futureBallsRemaining) * 6;
+        const wicketsLeft = 10 - tempEngine.wickets;
+        if (requiredRR > 36) winProbability = 1;
+        else {
+          const rDiff = requiredRR - 8;
+          winProbability = 50 - (rDiff * 4) + (wicketsLeft - 5) * 8;
+          winProbability = Math.max(1, Math.min(99, Math.round(winProbability)));
+        }
+      }
+
+      probabilitiesList.push(winProbability);
+    }
+
+    return probabilitiesList;
   }
 
   generateNextBall() {
@@ -159,6 +332,24 @@ export class LocalLiveMatchEngine {
       return null;
     }
 
+    const bowler = this.getBowler();
+    if (!this.bowlerStamina) this.bowlerStamina = {};
+    if (this.bowlerStamina[bowler] === undefined) this.bowlerStamina[bowler] = 100;
+
+    // Bowler fatigue active stamina drain
+    const pressure = this.lastPressureIndex || 50;
+    const activeDrain = pressure > 75 ? 3.0 : 2.0;
+    this.bowlerStamina[bowler] = Math.max(0, this.bowlerStamina[bowler] - activeDrain);
+
+    // Resting bowlers regain stamina
+    this.bowlers.forEach(b => {
+      if (b !== bowler) {
+        if (this.bowlerStamina[b] === undefined) this.bowlerStamina[b] = 100;
+        this.bowlerStamina[b] = Math.min(100, this.bowlerStamina[b] + 0.83);
+      }
+    });
+
+    const stamina = this.bowlerStamina[bowler];
     const ballsRemaining = 120 - this.ballsBowled;
     const runsNeeded = Math.max(0, this.target - this.currentRuns);
     const requiredRR = (runsNeeded / ballsRemaining) * 6;
@@ -175,6 +366,18 @@ export class LocalLiveMatchEngine {
       six: 0.06,
       wicket: 0.04
     };
+
+    // Bowler fatigue adjustments
+    if (stamina < 50) {
+      const fatigueFactor = (100 - stamina) / 100;
+      probs.wicket = probs.wicket * (1.0 - fatigueFactor * 0.5);
+      const economyDegrade = 1.0 + fatigueFactor * 0.4;
+      probs.six = probs.six * economyDegrade;
+      probs.boundary = probs.boundary * economyDegrade;
+      probs.double = probs.double * economyDegrade;
+      probs.single = probs.single * economyDegrade;
+      probs.dot = Math.max(0.05, probs.dot / economyDegrade);
+    }
 
     // State adjustments
     if (requiredRR > 12) {
@@ -266,6 +469,55 @@ export class LocalLiveMatchEngine {
 
     this.currentRuns = Math.min(this.target, this.currentRuns + runsScored);
 
+    // Psychologist state updates for the striker
+    if (striker) {
+      const name = striker.name;
+      if (this.batsmanDotStreak[name] === undefined) this.batsmanDotStreak[name] = 0;
+      if (this.batsmanRecentRuns[name] === undefined) this.batsmanRecentRuns[name] = [];
+      if (this.batsmanBoundaryDrought[name] === undefined) this.batsmanBoundaryDrought[name] = 0;
+
+      if (runsScored === 0 && !isWicket) {
+        this.batsmanDotStreak[name]++;
+      } else {
+        this.batsmanDotStreak[name] = 0;
+      }
+
+      this.batsmanRecentRuns[name].push(runsScored);
+      if (this.batsmanRecentRuns[name].length > 5) {
+        this.batsmanRecentRuns[name].shift();
+      }
+
+      if (runsScored >= 4) {
+        this.batsmanBoundaryDrought[name] = 0;
+      } else {
+        this.batsmanBoundaryDrought[name]++;
+      }
+    }
+
+    // Generate Wagon Wheel Shot
+    let shot = null;
+    if (runsScored > 0 || outcome === "dot") {
+      const name = striker ? striker.name : "Batsman";
+      if (!this.batsmanShots[name]) this.batsmanShots[name] = [];
+
+      const angle = Math.floor(Math.random() * 360);
+      let distance = 0;
+      if (runsScored === 0) {
+        distance = 15 + Math.random() * 15; // Block defense
+      } else if (runsScored === 1) {
+        distance = 45 + Math.random() * 15;
+      } else if (runsScored === 2) {
+        distance = 55 + Math.random() * 15;
+      } else if (runsScored === 4) {
+        distance = 82 + Math.random() * 8;
+      } else if (runsScored === 6) {
+        distance = 95 + Math.random() * 15;
+      }
+
+      shot = { angle, distance, runs: runsScored };
+      this.batsmanShots[name].push(shot);
+    }
+
     let outBatsmanName = "";
     if (isWicket) {
       outBatsmanName = this.strikerName;
@@ -301,6 +553,13 @@ export class LocalLiveMatchEngine {
     const bowlerText = this.getBowler();
     const commentary = this._generateCommentary(outcome, batsmanText, bowlerText);
 
+    // Simulate parallel branches
+    const branches = {
+      alpha: this.simulateBranch("alpha"),
+      beta: this.simulateBranch("beta"),
+      gamma: this.simulateBranch("gamma")
+    };
+
     return {
       over: overDecimal,
       batsman: striker ? striker.name : "Batsman",
@@ -318,7 +577,12 @@ export class LocalLiveMatchEngine {
         strike: b.name === this.strikerName && b.active,
         out: b.out
       })),
-      isOverEnd: isOverEnd
+      isOverEnd: isOverEnd,
+      
+      // v4.0 metrics
+      bowlerStamina: { ...this.bowlerStamina },
+      shot: shot,
+      branches: branches
     };
   }
 
@@ -334,7 +598,7 @@ export class LocalLiveMatchEngine {
 }
 
 // Live commentary template database for offline mode
-const liveAgentCounters = { analyst: 0, scout: 0, narrator: 0 };
+const liveAgentCounters = { analyst: 0, scout: 0, narrator: 0, psychologist: 0 };
 
 const LIVE_INSIGHTS_DATABASE = {
   analyst: {
@@ -495,6 +759,24 @@ function generateLiveAgentFallbackInsights(ball, winProbability, pressureIndex, 
   };
 }
 
+// Dynamic clinical fallback insights for Psychologist
+function generatePsychologistInsight(strikerName, bowlerName, batterPressure, bowlerPressure) {
+  const zoneText = batterPressure < 30 ? "is in absolute psychological flow, reading the bowler with perfect clarity." : (batterPressure > 75 ? "is showing acute cognitive overload, grip tightening, footwork freezing." : "maintains stable mental homeostasis.");
+  const bowlerText = bowlerPressure > 70 ? `${bowlerName} is experiencing significant stress, losing command of release mechanics.` : `${bowlerName} is breathing calm, executing tactical plans with high focus.`;
+  return `Psychological Telemetry: ${strikerName} (${batterPressure}/100 pressure) ${zoneText} ${bowlerName} (${bowlerPressure}/100) ${bowlerText}`;
+}
+
+function getScoutWagonWheelAdvice(batsmanName, shots = []) {
+  if (!shots || shots.length === 0) return "";
+  const boundaryShots = shots.filter(s => s.runs >= 4);
+  if (boundaryShots.length > 0) {
+    const lastAngle = boundaryShots[boundaryShots.length - 1].angle;
+    const gapAngle = (lastAngle + 180) % 360;
+    return ` Scout note: Wagon wheel shows high boundary density towards ${lastAngle}°. Bowler should target the gap at ${gapAngle}° to restrict scoring.`;
+  }
+  return "";
+}
+
 // Heuristic fallback text generator for client-side offline mode (historical matches)
 export function generateFallbackInsights(scenarioId, ball, prob, pressure, state) {
   if (scenarioId === "ind_vs_pak_2022") {
@@ -594,6 +876,7 @@ export function generateFallbackInsights(scenarioId, ball, prob, pressure, state
     if (database[key]) return database[key];
   }
 
+  // Generic fallback if not one of the preloaded scenarios or if it goes past bounds
   return {
     analyst: `Score is ${ball.score} after ${ball.over} overs. Target: ${ball.target}. Win probability calculated at ${prob}%.`,
     scout: `Current required rate is ${( (ball.target - ball.runs) / (ball.ballsRemaining || 6) * 6).toFixed(2)}. Recommend focusing on bowling matchups.`,
@@ -733,7 +1016,7 @@ export function processBallEvent(ball, scenarioId, matchHistory = [], sharedMemo
     criticalEvent = {
       type: "NO_BALL",
       title: "High Drama: No-Ball Six!",
-      description: "Nawaz bowls a height no-ball, Kohli dispatches it for six! Free hit awarded.",
+      description: "Bowled a height no-ball, Kohli dispatches it for six! Free hit awarded.",
       severity: "high"
     };
   } else if (ball.event === "dot" && pressureIndex > 85) {
@@ -794,9 +1077,83 @@ export function processBallEvent(ball, scenarioId, matchHistory = [], sharedMemo
     narratorInsight = fallback.narrator;
   }
 
+  // Calculate batsman dot streak and boundary drought from matchHistory for Psychologist
+  let dotStreak = 0;
+  let boundaryDrought = 0;
+  let recentRuns = [];
+  const strikerName = ball.batsman || "Batsman";
+  const bowlerName = ball.bowler || "Bowler";
+
+  // Scan matchHistory for stats
+  let strikerHistory = matchHistory.filter(h => h.batsman === strikerName);
+  strikerHistory.forEach(h => {
+    if (h.event === 'dot' || h.runs === 0) {
+      dotStreak++;
+    } else {
+      dotStreak = 0;
+    }
+    recentRuns.push(h.runs);
+    if (recentRuns.length > 5) recentRuns.shift();
+
+    if (h.runs >= 4) {
+      boundaryDrought = 0;
+    } else {
+      boundaryDrought++;
+    }
+  });
+
+  // Calculate current ball
+  const runsScored = ball.runs;
+  if (runsScored === 0 && ball.event !== 'wicket') {
+    dotStreak++;
+  } else {
+    dotStreak = 0;
+  }
+  recentRuns.push(runsScored);
+  if (recentRuns.length > 5) recentRuns.shift();
+  if (runsScored >= 4) {
+    boundaryDrought = 0;
+  } else {
+    boundaryDrought++;
+  }
+
+  let batterPressure = 35 + (dotStreak * 10) + (boundaryDrought * 2.5);
+  const recentSum = recentRuns.reduce((a,b)=>a+b, 0);
+  batterPressure += (5 - recentSum) * 3;
+  batterPressure = Math.max(10, Math.min(95, Math.round(batterPressure)));
+
+  // Bowler pressure
+  const bowlerRequiredRR = ballsRemaining > 0 ? ((runsNeeded / ballsRemaining) * 6) : 0;
+  let bowlerPressure = 45;
+  const rrrDiff = 10 - bowlerRequiredRR;
+  bowlerPressure += rrrDiff * 4;
+  if (ball.event === 'six' || ball.event === 'boundary') bowlerPressure += 18;
+  if (ball.event === 'dot') bowlerPressure -= 5;
+  bowlerPressure = Math.max(10, Math.min(98, Math.round(bowlerPressure)));
+
+  // Generate Psychologist commentary fallback text
+  const psychologistInsight = generatePsychologistInsight(strikerName, bowlerName, batterPressure, bowlerPressure);
+
+  // Inject Wagon Wheel Advice into scout comment dynamically
+  // Search history for all shots by this batter
+  const batterShots = [];
+  matchHistory.forEach(h => {
+    if (h.batsman === strikerName && h.shot) {
+      batterShots.push(h.shot);
+    }
+  });
+  if (ball.shot) batterShots.push(ball.shot);
+  const scoutWagonAdvice = getScoutWagonWheelAdvice(strikerName, batterShots);
+  if (scoutWagonAdvice) {
+    scoutInsight += " " + scoutWagonAdvice;
+  }
+
+  // Calculate if a tactical disagreement/dissent is occurring on this ball
   const key = over.toFixed(1);
+  const psychologistConflict = batterPressure > 75 && winProbability > 70;
   const disagreementActive = !!(DISAGREEMENTS[scenarioId] && DISAGREEMENTS[scenarioId][key]) || 
-    (scoutInsight && /disagree|dissent|contrary|challenge|dissenting|models fail|incorrect|objection/i.test(scoutInsight));
+    (scoutInsight && /disagree|dissent|contrary|challenge|dissenting|models fail|incorrect|objection/i.test(scoutInsight)) ||
+    psychologistConflict;
 
   const currentHistoryItem = {
     index: matchHistory.length,
@@ -807,9 +1164,19 @@ export function processBallEvent(ball, scenarioId, matchHistory = [], sharedMemo
     winProbability: winProbability,
     pressureIndex: pressureIndex,
     event: ball.event,
-    batsman: ball.batsman,
-    bowler: ball.bowler,
+    batsman: strikerName,
+    bowler: bowlerName,
     commentary: ball.commentary,
+    shot: ball.shot,
+    branches: ball.branches,
+    bowlerStamina: ball.bowlerStamina,
+    psychologist: {
+      batterPressure,
+      bowlerPressure,
+      striker: strikerName,
+      bowler: bowlerName,
+      dissent: psychologistConflict
+    },
     agents: {
       analyst: {
         text: analystInsight,
@@ -826,6 +1193,12 @@ export function processBallEvent(ball, scenarioId, matchHistory = [], sharedMemo
       },
       narrator: {
         text: narratorInsight
+      },
+      psychologist: {
+        text: psychologistInsight,
+        confidence: 90,
+        stability: batterPressure > 75 ? "VOLATILE" : "STABLE",
+        certainty: psychologistConflict ? "DIVERGENT" : "ALIGNED"
       }
     }
   };
@@ -833,6 +1206,38 @@ export function processBallEvent(ball, scenarioId, matchHistory = [], sharedMemo
   const isDuplicateHistory = matchHistory.some(h => Math.abs(h.over - ball.over) < 0.01 && h.event === ball.event);
   if (!isDuplicateHistory) {
     matchHistory.push(currentHistoryItem);
+  }
+
+  // If branches don't exist (e.g. historical data or older format), generate fallback branches
+  let finalBranches = ball.branches;
+  if (!finalBranches) {
+    // Generate dummy branches extending from current winProbability
+    finalBranches = {
+      alpha: Array.from({length: 6}, (_,i) => Math.max(1, Math.min(99, Math.round(winProbability + (i + 1) * (Math.random() * 6 - 2.5))))),
+      beta: Array.from({length: 6}, (_,i) => Math.max(1, Math.min(99, Math.round(winProbability + (i + 1) * (Math.random() * 4 - 2.0))))),
+      gamma: Array.from({length: 6}, (_,i) => Math.max(1, Math.min(99, Math.round(winProbability + (i + 1) * (Math.random() * 8 - 4.0)))))
+    };
+    currentHistoryItem.branches = finalBranches;
+  }
+
+  // Same for bowler stamina fallback
+  let finalBowlerStamina = ball.bowlerStamina;
+  if (!finalBowlerStamina) {
+    finalBowlerStamina = {};
+    const bowlersList = currentScenario.balls ? [...new Set(currentScenario.balls.map(b => b.bowler))] : [bowlerName];
+    bowlersList.forEach(b => {
+      finalBowlerStamina[b] = 100;
+    });
+    currentHistoryItem.bowlerStamina = finalBowlerStamina;
+  }
+
+  // Same for shot fallback
+  let finalShot = ball.shot;
+  if (!finalShot && (runsScored > 0 || ball.event === "dot")) {
+    const angle = Math.floor(Math.random() * 360);
+    const dist = runsScored === 0 ? 20 : (runsScored < 4 ? 50 : 90);
+    finalShot = { angle, distance: dist, runs: runsScored };
+    currentHistoryItem.shot = finalShot;
   }
 
   return {
@@ -851,8 +1256,8 @@ export function processBallEvent(ball, scenarioId, matchHistory = [], sharedMemo
       score: score,
       wickets: wickets,
       target: target,
-      batsman: ball.batsman,
-      bowler: ball.bowler,
+      batsman: strikerName,
+      bowler: bowlerName,
       runsNeeded: runsNeeded,
       ballsRemaining: ballsRemaining,
       requiredRR: ballsRemaining > 0 ? ((runsNeeded / ballsRemaining) * 6).toFixed(2) : "0.00",
@@ -868,6 +1273,12 @@ export function processBallEvent(ball, scenarioId, matchHistory = [], sharedMemo
     agents: currentHistoryItem.agents,
     criticalEvent: criticalEvent,
     timeline: sharedMemory.timeline,
-    history: matchHistory
+    history: matchHistory,
+    
+    // v4.0 props
+    shot: finalShot,
+    branches: finalBranches,
+    bowlerStamina: finalBowlerStamina,
+    fielders: FIELDER_POSITIONS
   };
 }

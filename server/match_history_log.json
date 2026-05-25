@@ -1,32 +1,391 @@
 [
   {
     "index": 0,
-    "over": 16,
-    "score": "142/4",
-    "runs": 142,
-    "wickets": 4,
-    "winProbability": 48,
-    "pressureIndex": 90,
-    "event": "dot",
-    "batsman": "Suryakumar Yadav",
-    "bowler": "Avesh Khan",
-    "commentary": "Match ready. Target: 184 in 20 overs. Starting Live Match Simulation.",
+    "over": 19.1,
+    "score": "143/5",
+    "runs": 143,
+    "wickets": 5,
+    "winProbability": 65,
+    "pressureIndex": 98,
+    "event": "double",
+    "batsman": "Shane Watson",
+    "bowler": "Lasith Malinga",
+    "commentary": "Malinga bowls a yorker, Watson digs it out to deep midwicket and sprints back for two.",
+    "shot": {
+      "angle": 77.69657393844568,
+      "distance": 66,
+      "runs": 2
+    },
+    "branches": {
+      "alpha": [
+        68,
+        67,
+        72,
+        70,
+        77,
+        66
+      ],
+      "beta": [
+        65,
+        69,
+        62,
+        72,
+        67,
+        60
+      ],
+      "gamma": [
+        67,
+        62,
+        75,
+        68,
+        75,
+        82
+      ]
+    },
+    "bowlerStamina": {
+      "Lasith Malinga": 100
+    },
+    "psychologist": {
+      "batterPressure": 47,
+      "bowlerPressure": 51,
+      "striker": "Shane Watson",
+      "bowler": "Lasith Malinga",
+      "dissent": false
+    },
     "agents": {
       "analyst": {
-        "text": "MI win probability tracks at 48% in this 2026 IPL clash, with the pressure index holding steady at 90/100.",
-        "confidence": 50,
-        "stability": "STABLE",
-        "certainty": "CONFIDENT"
+        "text": "CSK requires 7 off 5. Malinga starts the final over. Shane Watson batting on 80. Win probability: CSK 65%.",
+        "confidence": 85,
+        "stability": "HIGH",
+        "certainty": "STABLE"
       },
       "scout": {
-        "text": "Jaiswal has placed a deep square leg. Scout recommends hitting the gaps to secure quick doubles.",
-        "confidence": 50,
+        "text": "Malinga is targeting the yorker. Watson is deep in the crease. Scout advises fielders at deep square leg to be alert.",
+        "confidence": 82,
         "stability": "STABLE",
         "certainty": "ALIGNED",
         "dissent": false
       },
       "narrator": {
-        "text": "Every run brings MI closer, every dot tightens the vise for RR's playoff berth. The story is building ball by ball."
+        "text": "The grand master Lasith Malinga. The final over of the IPL. Shane Watson stands in his path."
+      },
+      "psychologist": {
+        "text": "Psychological Telemetry: Shane Watson (47/100 pressure) maintains stable mental homeostasis. Lasith Malinga (51/100) Lasith Malinga is breathing calm, executing tactical plans with high focus.",
+        "confidence": 90,
+        "stability": "STABLE",
+        "certainty": "ALIGNED"
+      }
+    }
+  },
+  {
+    "index": 1,
+    "over": 19.2,
+    "score": "144/5",
+    "runs": 144,
+    "wickets": 5,
+    "winProbability": 70,
+    "pressureIndex": 98,
+    "event": "single",
+    "batsman": "Shane Watson",
+    "bowler": "Lasith Malinga",
+    "commentary": "Low full toss, Watson drives it to long-on for a single. Watson gets to 80 runs.",
+    "shot": {
+      "angle": 209,
+      "distance": 51,
+      "runs": 1
+    },
+    "branches": {
+      "alpha": [
+        68,
+        66,
+        67,
+        83,
+        84,
+        78
+      ],
+      "beta": [
+        71,
+        74,
+        71,
+        68,
+        68,
+        64
+      ],
+      "gamma": [
+        72,
+        64,
+        61,
+        65,
+        86,
+        74
+      ]
+    },
+    "bowlerStamina": {
+      "Lasith Malinga": 100
+    },
+    "psychologist": {
+      "batterPressure": 10,
+      "bowlerPressure": 49,
+      "striker": "Shane Watson",
+      "bowler": "Lasith Malinga",
+      "dissent": false
+    },
+    "agents": {
+      "analyst": {
+        "text": "6 off 4 needed. Scorecard: 144/5. Win probability: CSK 70%. Pressure index: 80.",
+        "confidence": 82,
+        "stability": "HIGH",
+        "certainty": "STABLE"
+      },
+      "scout": {
+        "text": "Watson drives to long-on. Malinga is varying his pace. Jadeja on strike must look for the gap.",
+        "confidence": 76,
+        "stability": "MODERATE",
+        "certainty": "ALIGNED",
+        "dissent": false
+      },
+      "narrator": {
+        "text": "A single. Watson jogs to the non-striker's end, exhausted but resolute. The championship is four balls away."
+      },
+      "psychologist": {
+        "text": "Psychological Telemetry: Shane Watson (10/100 pressure) is in absolute psychological flow, reading the bowler with perfect clarity. Lasith Malinga (49/100) Lasith Malinga is breathing calm, executing tactical plans with high focus.",
+        "confidence": 90,
+        "stability": "STABLE",
+        "certainty": "ALIGNED"
+      }
+    }
+  },
+  {
+    "index": 2,
+    "over": 19.3,
+    "score": "146/5",
+    "runs": 146,
+    "wickets": 5,
+    "winProbability": 78,
+    "pressureIndex": 98,
+    "event": "double",
+    "batsman": "Ravindra Jadeja",
+    "bowler": "Lasith Malinga",
+    "commentary": "Jadeja flicks a full delivery to deep midwicket, they run hard and get two. 4 needed off 3.",
+    "shot": {
+      "angle": 245.51978890481882,
+      "distance": 79,
+      "runs": 2
+    },
+    "branches": {
+      "alpha": [
+        80,
+        85,
+        76,
+        83,
+        83,
+        74
+      ],
+      "beta": [
+        78,
+        80,
+        73,
+        83,
+        76,
+        88
+      ],
+      "gamma": [
+        77,
+        75,
+        77,
+        85,
+        66,
+        89
+      ]
+    },
+    "bowlerStamina": {
+      "Lasith Malinga": 100
+    },
+    "psychologist": {
+      "batterPressure": 47,
+      "bowlerPressure": 53,
+      "striker": "Ravindra Jadeja",
+      "bowler": "Lasith Malinga",
+      "dissent": false
+    },
+    "agents": {
+      "analyst": {
+        "text": "CSK requires 4 off 3. Win probability rises to 78% for Chennai. MI is fading.",
+        "confidence": 74,
+        "stability": "MODERATE",
+        "certainty": "DIVERGENT"
+      },
+      "scout": {
+        "text": "I disagree. Rohit Sharma is instructing Malinga to bowl slower balls. Jadeja is eager to sweep; Malinga is baiting a leading edge.",
+        "confidence": 82,
+        "stability": "STABLE",
+        "certainty": "DEBATED",
+        "dissent": true
+      },
+      "narrator": {
+        "text": "A crucial moment in the match. The crowd is tense as the bowler prepares for the next delivery."
+      },
+      "psychologist": {
+        "text": "Psychological Telemetry: Ravindra Jadeja (47/100 pressure) maintains stable mental homeostasis. Lasith Malinga (53/100) Lasith Malinga is breathing calm, executing tactical plans with high focus.",
+        "confidence": 90,
+        "stability": "STABLE",
+        "certainty": "ALIGNED"
+      }
+    }
+  },
+  {
+    "index": 3,
+    "over": 19.4,
+    "score": "147/5",
+    "runs": 147,
+    "wickets": 5,
+    "winProbability": 82,
+    "pressureIndex": 98,
+    "event": "single",
+    "batsman": "Ravindra Jadeja",
+    "bowler": "Lasith Malinga",
+    "commentary": "Slower delivery outside off, Jadeja steers it to deep cover for a single to put Watson back on strike.",
+    "shot": {
+      "angle": 36,
+      "distance": 64,
+      "runs": 1
+    },
+    "branches": {
+      "alpha": [
+        85,
+        79,
+        89,
+        92,
+        77,
+        85
+      ],
+      "beta": [
+        83,
+        79,
+        85,
+        81,
+        78,
+        77
+      ],
+      "gamma": [
+        83,
+        78,
+        73,
+        69,
+        99,
+        68
+      ]
+    },
+    "bowlerStamina": {
+      "Lasith Malinga": 100
+    },
+    "psychologist": {
+      "batterPressure": 10,
+      "bowlerPressure": 49,
+      "striker": "Ravindra Jadeja",
+      "bowler": "Lasith Malinga",
+      "dissent": false
+    },
+    "agents": {
+      "analyst": {
+        "text": "3 off 2. Jadeja singles. Watson returns to strike. Win probability: CSK 82%.",
+        "confidence": 76,
+        "stability": "MODERATE",
+        "certainty": "STABLE"
+      },
+      "scout": {
+        "text": "Watson on 80. Malinga is likely to bowl a slower ball or yorker. Watson must clear his front leg to swing.",
+        "confidence": 70,
+        "stability": "VOLATILE",
+        "certainty": "ALIGNED",
+        "dissent": false
+      },
+      "narrator": {
+        "text": "A single to cover. Watson takes strike. The crowd in Hyderabad is screaming. One hit to win."
+      },
+      "psychologist": {
+        "text": "Psychological Telemetry: Ravindra Jadeja (10/100 pressure) is in absolute psychological flow, reading the bowler with perfect clarity. Lasith Malinga (49/100) Lasith Malinga is breathing calm, executing tactical plans with high focus.",
+        "confidence": 90,
+        "stability": "STABLE",
+        "certainty": "ALIGNED"
+      }
+    }
+  },
+  {
+    "index": 4,
+    "over": 19.5,
+    "score": "148/6",
+    "runs": 148,
+    "wickets": 6,
+    "winProbability": 50,
+    "pressureIndex": 99,
+    "event": "wicket",
+    "batsman": "Shane Watson",
+    "bowler": "Lasith Malinga",
+    "commentary": "RUN OUT! Shane Watson is gone! He taps it to deep point, runs for one, wants the second, but Krunal Pandya fires a perfect throw and de Kock whips the bails off! Watson falls on 80! Shardul Thakur comes in. 2 needed off 1!",
+    "shot": {
+      "angle": 210.65128113586968,
+      "distance": 78,
+      "runs": 0
+    },
+    "branches": {
+      "alpha": [
+        50,
+        46,
+        60,
+        50,
+        57,
+        36
+      ],
+      "beta": [
+        52,
+        52,
+        44,
+        56,
+        46,
+        43
+      ],
+      "gamma": [
+        47,
+        44,
+        55,
+        62,
+        37,
+        31
+      ]
+    },
+    "bowlerStamina": {
+      "Lasith Malinga": 100
+    },
+    "psychologist": {
+      "batterPressure": 10,
+      "bowlerPressure": 37,
+      "striker": "Shane Watson",
+      "bowler": "Lasith Malinga",
+      "dissent": false
+    },
+    "agents": {
+      "analyst": {
+        "text": "Shane Watson run out on 80! Score: 148/6. Win probability swings to a dead heat: 50-50.",
+        "confidence": 60,
+        "stability": "CRITICAL",
+        "certainty": "DIVERGENT"
+      },
+      "scout": {
+        "text": "CSK has the tactical disadvantage now. Shardul Thakur is vulnerable to yorkers. MI has fielders in the ring; no boundaries will be allowed.",
+        "confidence": 86,
+        "stability": "HIGH",
+        "certainty": "DEBATED",
+        "dissent": true
+      },
+      "narrator": {
+        "text": "A crucial moment in the match. The crowd is tense as the bowler prepares for the next delivery."
+      },
+      "psychologist": {
+        "text": "Psychological Telemetry: Shane Watson (10/100 pressure) is in absolute psychological flow, reading the bowler with perfect clarity. Lasith Malinga (37/100) Lasith Malinga is breathing calm, executing tactical plans with high focus.",
+        "confidence": 90,
+        "stability": "STABLE",
+        "certainty": "ALIGNED"
       }
     }
   }

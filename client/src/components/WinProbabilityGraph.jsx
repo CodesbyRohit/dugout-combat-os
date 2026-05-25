@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-export default function WinProbabilityGraph({ history, matchInfo }) {
+export default function WinProbabilityGraph({ history, matchInfo, selectedHistoryIndex = -1 }) {
   const canvasRef = useRef(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -91,14 +91,7 @@ export default function WinProbabilityGraph({ history, matchInfo }) {
 
     // Parse data points
     // X axis represents progress through the balls.
-    // Let's map X indices from 0 to total expected points or history.length.
-    const maxPoints = Math.max(10, history.length);
-    
-    // Draw probability curve
-    ctx.strokeStyle = 'var(--neon-cyan)';
-    ctx.lineWidth = 1.5;
-
-    ctx.beginPath();
+    const maxPoints = Math.max(20, history.length + 6);
     
     // Draw coordinates
     const points = history.map((item, idx) => {
@@ -107,11 +100,15 @@ export default function WinProbabilityGraph({ history, matchInfo }) {
       return { x, y, val: item.winProbability, over: item.over };
     });
 
+    // Draw main probability curve
+    ctx.strokeStyle = 'var(--neon-cyan)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    
     points.forEach((pt, idx) => {
       if (idx === 0) {
         ctx.moveTo(pt.x, pt.y);
       } else {
-        // Curve interpolation (bezier)
         const prev = points[idx - 1];
         const xc = (prev.x + pt.x) / 2;
         const yc = (prev.y + pt.y) / 2;
@@ -125,12 +122,11 @@ export default function WinProbabilityGraph({ history, matchInfo }) {
       ctx.lineTo(last.x, last.y);
     }
     ctx.stroke();
-    ctx.shadowBlur = 0; // Reset shadow
 
     // Fill under the curve
     if (points.length > 0) {
       const grad = ctx.createLinearGradient(0, paddingTop, 0, paddingTop + chartHeight);
-      grad.addColorStop(0, 'rgba(0, 229, 255, 0.04)');
+      grad.addColorStop(0, 'rgba(0, 229, 255, 0.05)');
       grad.addColorStop(1, 'rgba(0, 229, 255, 0.0)');
       ctx.fillStyle = grad;
 
@@ -143,6 +139,56 @@ export default function WinProbabilityGraph({ history, matchInfo }) {
       ctx.closePath();
       ctx.fill();
     }
+
+    // ──────────────────────── v4.0 GHOST BRANCHES DRAWING ────────────────────────
+    // Find active starting index for parallel universes
+    const activeIdx = selectedHistoryIndex >= 0 && selectedHistoryIndex < history.length
+      ? selectedHistoryIndex
+      : history.length - 1;
+
+    const activeNode = history[activeIdx];
+    if (activeNode && activeNode.branches) {
+      const branchColors = {
+        alpha: { stroke: 'rgba(255, 120, 0, 0.65)', fill: 'rgba(255, 120, 0, 0.08)', collapsed: 'rgba(255, 120, 0, 0.08)' }, // Aggressive (Orange)
+        beta: { stroke: 'rgba(0, 208, 132, 0.65)', fill: 'rgba(0, 208, 132, 0.08)', collapsed: 'rgba(0, 208, 132, 0.08)' },   // Conservative (Green)
+        gamma: { stroke: 'rgba(168, 85, 247, 0.65)', fill: 'rgba(168, 85, 247, 0.08)', collapsed: 'rgba(168, 85, 247, 0.08)' }  // Volatile (Purple)
+      };
+
+      Object.entries(activeNode.branches).forEach(([branchName, curve]) => {
+        const config = branchColors[branchName] || branchColors.alpha;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+
+        ctx.beginPath();
+        // Start from the active history node's point
+        const startPt = points[activeIdx];
+        if (startPt) {
+          ctx.moveTo(startPt.x, startPt.y);
+
+          curve.forEach((val, i) => {
+            const nextIdx = activeIdx + i + 1;
+            const bx = paddingLeft + (nextIdx / (maxPoints - 1)) * chartWidth;
+            const by = paddingTop + chartHeight - (val / 100) * chartHeight;
+
+            // Divergence calculation
+            let isCollapsed = false;
+            if (history[nextIdx]) {
+              const divergence = Math.abs(history[nextIdx].winProbability - val);
+              if (divergence > 25) {
+                isCollapsed = true;
+              }
+            }
+
+            ctx.strokeStyle = isCollapsed ? config.collapsed : config.stroke;
+            ctx.lineTo(bx, by);
+          });
+          ctx.stroke();
+        }
+
+        ctx.setLineDash([]); // Reset line dash
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────────
 
     // Draw markers for special events (e.g. wickets, boundaries)
     history.forEach((item, idx) => {
@@ -161,14 +207,29 @@ export default function WinProbabilityGraph({ history, matchInfo }) {
       }
     });
 
+    // Draw selection highlight ring if in Replay/Historical Mode
+    if (activeIdx < history.length) {
+      const selectedPt = points[activeIdx];
+      if (selectedPt) {
+        ctx.strokeStyle = 'var(--neon-orange)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(selectedPt.x, selectedPt.y, 8, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+    }
+
     const active = points[points.length - 1];
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(active.x, active.y, 4, 0, 2 * Math.PI);
-    ctx.fill();
+    if (active) {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(active.x, active.y, 4, 0, 2 * Math.PI);
+      ctx.fill();
+    }
 
     // Draw Over Markers on X-axis
     ctx.fillStyle = '#8c96ac';
+    ctx.font = '9px monospace';
     ctx.textAlign = 'center';
     
     // Label first and last overs
@@ -177,13 +238,13 @@ export default function WinProbabilityGraph({ history, matchInfo }) {
     ctx.fillText(`Over ${firstOver.toFixed(1)}`, paddingLeft + 15, height - 10);
     ctx.fillText(`Over ${lastOver.toFixed(1)}`, width - paddingRight - 15, height - 10);
 
-  }, [history]);
+  }, [history, selectedHistoryIndex]);
 
   return (
     <div className={`graph-container probability-graph-container ${isUpdating ? 'probability-shift' : ''}`} style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
         <span style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-          Probability Trend Curve
+          Probability Trend Curve + Branches
         </span>
         <span style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--neon-cyan)' }}>
           {matchInfo ? `${matchInfo.battingTeam} Win %` : 'Live Forecast'}

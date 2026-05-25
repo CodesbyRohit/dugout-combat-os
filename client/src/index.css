@@ -7,6 +7,8 @@
   --bg-scout: #0A2D45;
   --accent-narrator: #FFB800;
   --bg-narrator: #3D2F1F;
+  --accent-psychologist: #A855F7;
+  --bg-psychologist: #25123D;
   --alert-critical: #FF4444;
   --text-primary: #FFFFFF;
   --text-secondary: #7A8A9A;
@@ -1661,6 +1663,84 @@ body::before {
 
 .boot-log-line::before {
   content: '⚡ ';
+}
+
+/* --- DUGOUT v4.0 FEATURE EXPANSION STYLES --- */
+
+/* Bowler Fatigue Arc Reactor pulses */
+@keyframes reactorFatigueBreathe {
+  0%, 100% { box-shadow: 0 0 25px rgba(255, 120, 0, 0.45); }
+  50% { box-shadow: 0 0 45px rgba(255, 120, 0, 0.75); }
+}
+
+.pressure-gauge.reactor-fatigued {
+  border-color: rgba(255, 120, 0, 0.7) !important;
+  color: #ff7800 !important;
+  background: radial-gradient(circle, rgba(10, 14, 39, 0.85) 45%, rgba(255, 120, 0, 0.15) 100%) !important;
+  animation: reactorFatigueBreathe 1.5s ease-in-out infinite !important;
+}
+
+.pressure-gauge.reactor-fatigued::before {
+  border-color: rgba(255, 120, 0, 0.6) !important;
+}
+
+.pressure-gauge.reactor-fatigued::after {
+  border-top-color: rgba(255, 120, 0, 0.9) !important;
+  border-bottom-color: rgba(255, 120, 0, 0.9) !important;
+}
+
+/* Wagon Wheel overlay */
+.wagon-wheel-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* Parallel Universe branch nodes UI */
+.branch-nodes-container {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(15, 21, 53, 0.8);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.branch-node-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: rgba(10, 14, 39, 0.5);
+  border-left: 3px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.branch-node-row:hover {
+  background: rgba(18, 26, 71, 0.7);
+}
+
+.branch-node-row.collapsed {
+  opacity: 0.35;
+  text-decoration: line-through;
+  border-left-color: var(--alert-critical);
+}
+
+/* Psychologist accent matching */
+.agent-card.psychologist {
+  border-left-color: var(--accent-psychologist);
+}
+
+.agent-card.psychologist.active {
+  box-shadow: 0 0 15px var(--accent-psychologist);
 }
 
 
