@@ -3,7 +3,8 @@ import { WebSocketServer } from "ws";
 import http from "http";
 import cors from "cors";
 import dotenv from "dotenv";
-import { SCENARIOS, DISAGREEMENTS } from "./scenarios.js";
+import { SCENARIOS as STATIC_SCENARIOS, DISAGREEMENTS } from "./scenarios.js";
+const SCENARIOS = { ...STATIC_SCENARIOS };
 import { LiveMatchEngine } from "./liveEngine.js";
 import { CricbuzzAdapter } from "./cricbuzzAdapter.js";
 import fs from "fs";
@@ -39,6 +40,110 @@ let sharedMemory = {
   scoutLast: "",
   narratorLast: ""
 };
+
+function parseMatchTitle(title) {
+  const parts = title.split(/\s+v\s+/i);
+  if (parts.length < 2) return null;
+  const part1 = parts[0].trim();
+  const part2 = parts[1].trim();
+
+  const isTeam2Batting = part2.includes("*");
+  const battingPart = isTeam2Batting ? part2 : part1;
+  const bowlingPart = isTeam2Batting ? part1 : part2;
+
+  const extractScore = (text) => {
+    const cleanText = text.replace("*", "").trim();
+    const scoreMatch = cleanText.match(/(.*?)\s+(\d+(?:\/\d+)?)$/);
+    if (scoreMatch) {
+      return {
+        name: scoreMatch[1].trim(),
+        scoreText: scoreMatch[2].trim()
+      };
+    }
+    return { name: cleanText, scoreText: "" };
+  };
+
+  const battingInfo = extractScore(battingPart);
+  const bowlingInfo = extractScore(bowlingPart);
+
+  let runs = 0;
+  let wickets = 0;
+  if (battingInfo.scoreText) {
+    if (battingInfo.scoreText.includes("/")) {
+      const sp = battingInfo.scoreText.split("/");
+      runs = parseInt(sp[0]) || 0;
+      wickets = parseInt(sp[1]) || 0;
+    } else {
+      runs = parseInt(battingInfo.scoreText) || 0;
+      wickets = 0;
+    }
+  }
+  
+  let target = 0;
+  if (bowlingInfo.scoreText) {
+    let bowlingRuns = 0;
+    if (bowlingInfo.scoreText.includes("/")) {
+      bowlingRuns = parseInt(bowlingInfo.scoreText.split("/")[0]) || 0;
+    } else {
+      bowlingRuns = parseInt(bowlingInfo.scoreText) || 0;
+    }
+    target = bowlingRuns + 1;
+  } else {
+    target = runs + 50;
+  }
+
+  return {
+    battingTeam: battingInfo.name,
+    bowlingTeam: bowlingInfo.name,
+    runs: runs,
+    wickets: wickets,
+    target: target
+  };
+}
+
+async function updateLiveScenarios() {
+  try {
+    const res = await fetch("https://static.cricinfo.com/rss/livescores.xml");
+    const xml = await res.text();
+    const matches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
+    let index = 0;
+    
+    // Clear old live matches from SCENARIOS to prevent clutter
+    Object.keys(SCENARIOS).forEach(k => {
+      if (k.startsWith("live_match_")) delete SCENARIOS[k];
+    });
+
+    for (const m of matches) {
+      const itemContent = m[1];
+      const titleMatch = itemContent.match(/<title>([\s\S]*?)<\/title>/);
+      if (titleMatch) {
+        let title = titleMatch[1].trim();
+        title = title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+        const parsed = parseMatchTitle(title);
+        if (parsed) {
+          const id = `live_match_${index}`;
+          const estimatedOvers = Math.min(19, Math.floor(parsed.runs / 8.0));
+          
+          SCENARIOS[id] = {
+            name: `🔴 LIVE: ${parsed.battingTeam} vs ${parsed.bowlingTeam}`,
+            venue: "Live Telemetry Feed (ESPN)",
+            battingTeam: parsed.battingTeam,
+            bowlingTeam: parsed.bowlingTeam,
+            target: parsed.target,
+            startingScore: parsed.runs,
+            startingWickets: parsed.wickets,
+            startingOvers: estimatedOvers,
+            balls: []
+          };
+          index++;
+        }
+      }
+    }
+    console.log(`Live scenarios updated: ${index} matches imported from ESPN.`);
+  } catch (err) {
+    console.error("Failed to fetch live scenarios from ESPN:", err);
+  }
+}
 
 // Heuristic fallback text generator for when there is no API key (extremely realistic)
 function generateFallbackInsights(scenarioId, ball, prob, pressure, state) {
@@ -147,7 +252,7 @@ function generateFallbackInsights(scenarioId, ball, prob, pressure, state) {
   };
 }
 
-const liveAgentCounters = { analyst: 0, scout: 0, narrator: 0 };
+const liveAgentCounters = { analyst: 0, scout: 0, narrator: 0, psychologist: 0 };
 
 const LIVE_INSIGHTS_DATABASE = {
   analyst: {
@@ -350,6 +455,100 @@ async function callGeminiAgent(apiKey, agentRole, systemPrompt, userMessage) {
   }
 }
 
+// Realistic Polar Coordinate Generator for Wagon Wheel & Canvas Animations
+function generateRealisticPolarCoordinates(event, runs) {
+  let angle = 0;
+  let distance = 0;
+
+  if (event === "wicket") {
+    const isCaughtDeep = Math.random() > 0.5;
+    if (isCaughtDeep) {
+      angle = [30, 75, 210, 250, 285, 330][Math.floor(Math.random() * 6)] + (Math.random() * 20 - 10);
+      distance = 60 + Math.random() * 25;
+    } else {
+      angle = 90 + (Math.random() * 10 - 5);
+      distance = 12 + Math.random() * 8;
+    }
+  } else if (runs === 0) {
+    const sectors = [
+      { min: 0, max: 45 },
+      { min: 160, max: 200 },
+      { min: 75, max: 105 }
+    ];
+    const s = sectors[Math.floor(Math.random() * sectors.length)];
+    angle = Math.floor(s.min + Math.random() * (s.max - s.min));
+    distance = 12 + Math.random() * 20;
+  } else if (runs === 1) {
+    const sectors = [
+      { min: 30, max: 60 },
+      { min: 130, max: 160 },
+      { min: 200, max: 230 },
+      { min: 250, max: 280 }
+    ];
+    const s = sectors[Math.floor(Math.random() * sectors.length)];
+    angle = Math.floor(s.min + Math.random() * (s.max - s.min));
+    distance = 45 + Math.random() * 20;
+  } else if (runs === 2 || runs === 3) {
+    angle = [30, 75, 210, 250, 285, 330][Math.floor(Math.random() * 6)] + (Math.random() * 16 - 8);
+    distance = 65 + Math.random() * 15;
+  } else if (runs === 4) {
+    const sectors = [
+      { min: 15, max: 40 },
+      { min: 65, max: 85 },
+      { min: 200, max: 225 },
+      { min: 240, max: 270 }
+    ];
+    const s = sectors[Math.floor(Math.random() * sectors.length)];
+    angle = Math.floor(s.min + Math.random() * (s.max - s.min));
+    distance = 82 + Math.random() * 6;
+  } else if (runs >= 6) {
+    const sectors = [
+      { min: 235, max: 265 },
+      { min: 275, max: 295 },
+      { min: 320, max: 340 },
+      { min: 190, max: 220 }
+    ];
+    const s = sectors[Math.floor(Math.random() * sectors.length)];
+    angle = Math.floor(s.min + Math.random() * (s.max - s.min));
+    distance = 95 + Math.random() * 20;
+  }
+
+  angle = (angle + 360) % 360;
+  return { angle, distance: Math.round(distance) };
+}
+
+// Core function to process each ball, update state, run agents, and broadcast
+const FIELDER_POSITIONS = [
+  { angle: 30, distance: 75, label: "Deep Extra Cover" },
+  { angle: 75, distance: 80, label: "Deep Point" },
+  { angle: 120, distance: 45, label: "Backward Point" },
+  { angle: 150, distance: 75, label: "Third Man" },
+  { angle: 210, distance: 80, label: "Deep Fine Leg" },
+  { angle: 250, distance: 75, label: "Deep Mid-Wicket" },
+  { angle: 285, distance: 80, label: "Long-on" },
+  { angle: 330, distance: 85, label: "Long-off" },
+  { angle: 0, distance: 35, label: "Cover" },
+  { angle: 180, distance: 25, label: "Square Leg" },
+  { angle: 90, distance: 15, label: "Wicketkeeper" }
+];
+
+function generatePsychologistInsight(strikerName, bowlerName, batterPressure, bowlerPressure) {
+  const zoneText = batterPressure < 30 ? "is in absolute psychological flow, reading the bowler with perfect clarity." : (batterPressure > 75 ? "is showing acute cognitive overload, grip tightening, footwork freezing." : "maintains stable mental homeostasis.");
+  const bowlerText = bowlerPressure > 70 ? `${bowlerName} is experiencing significant stress, losing command of release mechanics.` : `${bowlerName} is breathing calm, executing tactical plans with high focus.`;
+  return `Psychological Telemetry: ${strikerName} (${batterPressure}/100 pressure) ${zoneText} ${bowlerName} (${bowlerPressure}/100) ${bowlerText}`;
+}
+
+function getScoutWagonWheelAdvice(batsmanName, shots = []) {
+  if (!shots || shots.length === 0) return "";
+  const boundaryShots = shots.filter(s => s.runs >= 4);
+  if (boundaryShots.length > 0) {
+    const lastAngle = boundaryShots[boundaryShots.length - 1].angle;
+    const gapAngle = (lastAngle + 180) % 360;
+    return ` Scout note: Wagon wheel shows high boundary density towards ${lastAngle}°. Bowler should target the gap at ${gapAngle}° to restrict scoring.`;
+  }
+  return "";
+}
+
 // Core function to process each ball, update state, run agents, and broadcast
 async function processBallEvent(ball, scenarioId) {
   // 1. Calculate Scoreboard Variables
@@ -500,10 +699,65 @@ async function processBallEvent(ball, scenarioId) {
     });
   }
 
+  // Calculate batsman dot streak and boundary drought from matchHistory for Psychologist
+  let dotStreak = 0;
+  let boundaryDrought = 0;
+  let recentRuns = [];
+  const strikerName = ball.batsman || "Batsman";
+  const bowlerName = ball.bowler || "Bowler";
+
+  // Scan matchHistory for stats
+  let strikerHistory = matchHistory.filter(h => h.batsman === strikerName);
+  strikerHistory.forEach(h => {
+    if (h.event === 'dot' || h.runs === 0) {
+      dotStreak++;
+    } else {
+      dotStreak = 0;
+    }
+    recentRuns.push(h.runs);
+    if (recentRuns.length > 5) recentRuns.shift();
+
+    if (h.runs >= 4) {
+      boundaryDrought = 0;
+    } else {
+      boundaryDrought++;
+    }
+  });
+
+  // Calculate current ball
+  const runsScored = ball.runs;
+  if (runsScored === 0 && ball.event !== 'wicket') {
+    dotStreak++;
+  } else {
+    dotStreak = 0;
+  }
+  recentRuns.push(runsScored);
+  if (recentRuns.length > 5) recentRuns.shift();
+  if (runsScored >= 4) {
+    boundaryDrought = 0;
+  } else {
+    boundaryDrought++;
+  }
+
+  let batterPressure = 35 + (dotStreak * 10) + (boundaryDrought * 2.5);
+  const recentSum = recentRuns.reduce((a,b)=>a+b, 0);
+  batterPressure += (5 - recentSum) * 3;
+  batterPressure = Math.max(10, Math.min(95, Math.round(batterPressure)));
+
+  // Bowler pressure
+  const bowlerRequiredRR = ballsRemaining > 0 ? ((runsNeeded / ballsRemaining) * 6) : 0;
+  let bowlerPressure = 45;
+  const rrrDiff = 10 - bowlerRequiredRR;
+  bowlerPressure += rrrDiff * 4;
+  if (ball.event === 'six' || ball.event === 'boundary') bowlerPressure += 18;
+  if (ball.event === 'dot') bowlerPressure -= 5;
+  bowlerPressure = Math.max(10, Math.min(98, Math.round(bowlerPressure)));
+
   // 6. Run Coordinated Agents (Gemini vs Fallback)
   let analystInsight = "";
   let scoutInsight = "";
   let narratorInsight = "";
+  let psychologistInsight = "";
 
   // Dynamic Confidence Values
   const ballConfidence = ball.confidence || {
@@ -520,11 +774,11 @@ async function processBallEvent(ball, scenarioId) {
   };
 
   if (activeApiKey) {
-    console.log("Calling Gemini API for live match experience...");
+    console.log("Calling Gemini API for live match experience in parallel...");
     const sharedText = `
       Match: ${currentScenario ? currentScenario.name : "Live Simulation Match"} at ${currentScenario ? currentScenario.venue : "Live Stadium"}
       Batting Team: ${currentScenario ? currentScenario.battingTeam : "Batting Team"}, Bowling Team: ${currentScenario ? currentScenario.bowlingTeam : "Bowling Team"}
-      Score: ${score}, Overs: ${over}, Batsman: ${ball.batsman}, Bowler: ${ball.bowler}
+      Score: ${score}, Overs: ${over}, Batsman: ${strikerName}, Bowler: ${bowlerName}
       Last ball event: ${ball.event} (runs scored: ${runs})
       Raw Ball Commentary: ${ball.commentary}
       Current Win Probability: ${winProbability}% (chasing team)
@@ -536,9 +790,35 @@ async function processBallEvent(ball, scenarioId) {
 Role: Real-time cricket intelligence.
 Tone: Concise, sharp, TV-broadcast sports-analytics style. Never be robotic. Do not explain the math, explain the meaning.
 Task: Explain the statistical changes and win probability shift. Make it punchy. Max 2 sentences.`;
-    
-    analystInsight = await callGeminiAgent(activeApiKey, "Analyst", analystSystemPrompt, sharedText);
-    if (analystInsight) {
+
+    const scoutSystemPrompt = `You are the SCOUT agent for DUGOUT, a franchise dugout strategist.
+Role: Tactical recommendation engine.
+Tone: Tactical, coaching-oriented, predictive, and concise.
+Task: Recommend matchups, bowling strategies, or fielding changes based on the score and the Analyst's previous insight: "${sharedMemory.analystLast || 'None'}". Challenge or expand on the Analyst's statistical viewpoint if you see a tactical matchup opportunity. Max 2 sentences.`;
+
+    const narratorSystemPrompt = `You are the NARRATOR agent for DUGOUT.
+Role: Cinematic storytelling engine.
+Tone: Dramatic, cinematic, emotionally-charged, Netflix sports documentary style.
+Task: Craft a dramatic voiceover/commentary on the emotional gravity of this ball. Interconnect with Analyst ("${sharedMemory.analystLast || 'None'}") and Scout ("${sharedMemory.scoutLast || 'None'}"). Max 2 sentences.`;
+
+    const psychologistSystemPrompt = `You are the PSYCHOLOGIST agent for DUGOUT, a professional sports psychology diagnostics voice.
+Role: Mental pressure analysis.
+Tone: Clinical, analytical, focused on athlete stress levels, and concise.
+Task: Explain the psychological state and pressure of the batsman (${batterPressure}/100) and bowler (${bowlerPressure}/100). Narrate if they are in the zone, cracking, or under control. Max 2 sentences.`;
+
+    // Fault-Tolerant Parallel Orchestration
+    const promises = [
+      callGeminiAgent(activeApiKey, "Analyst", analystSystemPrompt, sharedText).catch(e => { console.error("Analyst API failed:", e); return null; }),
+      callGeminiAgent(activeApiKey, "Scout", scoutSystemPrompt, sharedText).catch(e => { console.error("Scout API failed:", e); return null; }),
+      callGeminiAgent(activeApiKey, "Narrator", narratorSystemPrompt, sharedText).catch(e => { console.error("Narrator API failed:", e); return null; }),
+      callGeminiAgent(activeApiKey, "Psychologist", psychologistSystemPrompt, sharedText).catch(e => { console.error("Psychologist API failed:", e); return null; })
+    ];
+
+    const [analystRes, scoutRes, narratorRes, psychologistRes] = await Promise.all(promises);
+
+    // Resolve Analyst Insight
+    if (analystRes) {
+      analystInsight = analystRes;
       sharedMemory.analystLast = analystInsight;
     } else {
       if (activeMode === "live") {
@@ -555,13 +835,9 @@ Task: Explain the statistical changes and win probability shift. Make it punchy.
       }
     }
 
-    const scoutSystemPrompt = `You are the SCOUT agent for DUGOUT, a franchise dugout strategist.
-Role: Tactical recommendation engine.
-Tone: Tactical, coaching-oriented, predictive, and concise.
-Task: Recommend matchups, bowling strategies, or fielding changes based on the score and the Analyst's insight: "${analystInsight}". Challenge or expand on the Analyst's statistical viewpoint if you see a tactical matchup opportunity. Max 2 sentences.`;
-
-    scoutInsight = await callGeminiAgent(activeApiKey, "Scout", scoutSystemPrompt, sharedText);
-    if (scoutInsight) {
+    // Resolve Scout Insight
+    if (scoutRes) {
+      scoutInsight = scoutRes;
       sharedMemory.scoutLast = scoutInsight;
     } else {
       if (activeMode === "live") {
@@ -578,13 +854,9 @@ Task: Recommend matchups, bowling strategies, or fielding changes based on the s
       }
     }
 
-    const narratorSystemPrompt = `You are the NARRATOR agent for DUGOUT.
-Role: Cinematic storytelling engine.
-Tone: Dramatic, cinematic, emotionally-charged, Netflix sports documentary style.
-Task: Craft a dramatic voiceover/commentary on the emotional gravity of this ball. Interconnect with Analyst ("${analystInsight}") and Scout ("${scoutInsight}"). Max 2 sentences.`;
-
-    narratorInsight = await callGeminiAgent(activeApiKey, "Narrator", narratorSystemPrompt, sharedText);
-    if (narratorInsight) {
+    // Resolve Narrator Insight
+    if (narratorRes) {
+      narratorInsight = narratorRes;
       sharedMemory.narratorLast = narratorInsight;
     } else {
       if (activeMode === "live") {
@@ -595,6 +867,12 @@ Task: Craft a dramatic voiceover/commentary on the emotional gravity of this bal
       }
     }
 
+    // Resolve Psychologist Insight
+    if (psychologistRes) {
+      psychologistInsight = psychologistRes;
+    } else {
+      psychologistInsight = generatePsychologistInsight(strikerName, bowlerName, batterPressure, bowlerPressure);
+    }
   } else {
     if (activeMode === "live") {
       const liveFallback = generateLiveAgentFallbackInsights(ball, winProbability, pressureIndex, currentScoreboard, scenarioId);
@@ -618,12 +896,28 @@ Task: Craft a dramatic voiceover/commentary on the emotional gravity of this bal
       const fallback = generateFallbackInsights(scenarioId, ball, winProbability, pressureIndex, momentumState);
       narratorInsight = fallback.narrator;
     }
+    psychologistInsight = generatePsychologistInsight(strikerName, bowlerName, batterPressure, bowlerPressure);
+  }
+
+  // Inject Wagon Wheel Advice into scout comment dynamically
+  const batterShots = [];
+  matchHistory.forEach(h => {
+    if (h.batsman === strikerName && h.shot) {
+      batterShots.push(h.shot);
+    }
+  });
+  if (ball.shot) batterShots.push(ball.shot);
+  const scoutWagonAdvice = getScoutWagonWheelAdvice(strikerName, batterShots);
+  if (scoutWagonAdvice) {
+    scoutInsight += " " + scoutWagonAdvice;
   }
 
   // Calculate if a tactical disagreement/dissent is occurring on this ball
   const key = over.toFixed(1);
+  const psychologistConflict = batterPressure > 75 && winProbability > 70;
   const disagreementActive = !!(DISAGREEMENTS[scenarioId] && DISAGREEMENTS[scenarioId][key]) || 
-    (scoutInsight && /disagree|dissent|contrary|challenge|dissenting|models fail|incorrect|objection/i.test(scoutInsight));
+    (scoutInsight && /disagree|dissent|contrary|challenge|dissenting|models fail|incorrect|objection/i.test(scoutInsight)) ||
+    psychologistConflict;
 
   // Build the complete history object
   const currentHistoryItem = {
@@ -635,9 +929,19 @@ Task: Craft a dramatic voiceover/commentary on the emotional gravity of this bal
     winProbability: winProbability,
     pressureIndex: pressureIndex,
     event: ball.event,
-    batsman: ball.batsman,
-    bowler: ball.bowler,
+    batsman: strikerName,
+    bowler: bowlerName,
     commentary: ball.commentary,
+    shot: ball.shot,
+    branches: ball.branches,
+    bowlerStamina: ball.bowlerStamina,
+    psychologist: {
+      batterPressure,
+      bowlerPressure,
+      striker: strikerName,
+      bowler: bowlerName,
+      dissent: psychologistConflict
+    },
     agents: {
       analyst: {
         text: analystInsight,
@@ -654,9 +958,43 @@ Task: Craft a dramatic voiceover/commentary on the emotional gravity of this bal
       },
       narrator: {
         text: narratorInsight
+      },
+      psychologist: {
+        text: psychologistInsight,
+        confidence: 90,
+        stability: batterPressure > 75 ? "VOLATILE" : "STABLE",
+        certainty: psychologistConflict ? "DIVERGENT" : "ALIGNED"
       }
     }
   };
+
+  // Generate fallback v4.0 properties if missing (e.g. historical match data format)
+  let finalBranches = ball.branches;
+  if (!finalBranches) {
+    finalBranches = {
+      alpha: Array.from({length: 6}, (_,i) => Math.max(1, Math.min(99, Math.round(winProbability + (i + 1) * (Math.random() * 6 - 2.5))))),
+      beta: Array.from({length: 6}, (_,i) => Math.max(1, Math.min(99, Math.round(winProbability + (i + 1) * (Math.random() * 4 - 2.0))))),
+      gamma: Array.from({length: 6}, (_,i) => Math.max(1, Math.min(99, Math.round(winProbability + (i + 1) * (Math.random() * 8 - 4.0)))))
+    };
+    currentHistoryItem.branches = finalBranches;
+  }
+
+  let finalBowlerStamina = ball.bowlerStamina;
+  if (!finalBowlerStamina) {
+    finalBowlerStamina = {};
+    const bowlersList = currentScenario.balls ? [...new Set(currentScenario.balls.map(b => b.bowler))] : [bowlerName];
+    bowlersList.forEach(b => {
+      finalBowlerStamina[b] = 100;
+    });
+    currentHistoryItem.bowlerStamina = finalBowlerStamina;
+  }
+
+  let finalShot = ball.shot;
+  if (!finalShot && (runsScored > 0 || ball.event === "dot" || ball.event === "wicket")) {
+    const coords = generateRealisticPolarCoordinates(ball.event, runsScored);
+    finalShot = { angle: coords.angle, distance: coords.distance, runs: runsScored };
+    currentHistoryItem.shot = finalShot;
+  }
 
   matchHistory.push(currentHistoryItem);
 
@@ -684,8 +1022,8 @@ Task: Craft a dramatic voiceover/commentary on the emotional gravity of this bal
       score: score,
       wickets: wickets,
       target: target,
-      batsman: ball.batsman,
-      bowler: ball.bowler,
+      batsman: strikerName,
+      bowler: bowlerName,
       runsNeeded: runsNeeded,
       ballsRemaining: ballsRemaining,
       requiredRR: ballsRemaining > 0 ? ((runsNeeded / ballsRemaining) * 6).toFixed(2) : "0.00",
@@ -701,7 +1039,13 @@ Task: Craft a dramatic voiceover/commentary on the emotional gravity of this bal
     agents: currentHistoryItem.agents,
     criticalEvent: criticalEvent,
     timeline: sharedMemory.timeline,
-    history: matchHistory
+    history: matchHistory,
+    
+    // v4.0 props
+    shot: finalShot,
+    branches: finalBranches,
+    bowlerStamina: finalBowlerStamina,
+    fielders: FIELDER_POSITIONS
   };
 }
 
@@ -735,6 +1079,7 @@ async function scheduleNextBall() {
       }
       
       const updatePayload = await processBallEvent(nextBall, currentScenarioId);
+      liveEngine.lastPressureIndex = updatePayload.telemetry.pressureIndex;
       updatePayload.timestamp = new Date().toISOString();
       updatePayload.telemetryLatency = Math.round(50 + Math.random() * 150); // Live latency jitter: 50-200ms
       updatePayload.activeMode = "live";
@@ -772,8 +1117,11 @@ async function scheduleNextBall() {
 }
 
 // WebSocket connections
-wss.on("connection", (ws) => {
+wss.on("connection", async (ws) => {
   console.log("Client connected to DUGOUT Platform WebSocket");
+  
+  // Dynamically fetch and append active live matches from ESPN RSS
+  await updateLiveScenarios();
   
   ws.send(JSON.stringify({
     type: "SYSTEM_READY",
@@ -813,6 +1161,11 @@ wss.on("connection", (ws) => {
             narratorLast: ""
           };
           broadcast({ type: "MODE_CHANGED", mode: activeMode });
+          break;
+
+        case "SET_COACH_OVERRIDE":
+          liveEngine.coachOverrideBowler = message.bowler;
+          console.log(`Coach override bowler set to: ${message.bowler}`);
           break;
 
         case "START_SIMULATION": {

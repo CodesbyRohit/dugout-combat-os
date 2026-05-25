@@ -4,7 +4,70 @@
  * Probabilistic ball-by-ball cricket simulator.
  * Dynamically adjusts probabilities based on required run rate, death overs,
  * and recent wickets to simulate realistic cricket pacing, volatility, and tension.
+ * Upgraded to v4.0 with Bowler Fatigue Stamina, Polar Shot mapping, and Parallel Branches.
  */
+
+// Realistic Polar Coordinate Generator for Wagon Wheel & Canvas Animations
+function generateRealisticPolarCoordinates(event, runs) {
+  let angle = 0;
+  let distance = 0;
+
+  if (event === "wicket") {
+    const isCaughtDeep = Math.random() > 0.5;
+    if (isCaughtDeep) {
+      angle = [30, 75, 210, 250, 285, 330][Math.floor(Math.random() * 6)] + (Math.random() * 20 - 10);
+      distance = 60 + Math.random() * 25;
+    } else {
+      angle = 90 + (Math.random() * 10 - 5);
+      distance = 12 + Math.random() * 8;
+    }
+  } else if (runs === 0) {
+    const sectors = [
+      { min: 0, max: 45 },
+      { min: 160, max: 200 },
+      { min: 75, max: 105 }
+    ];
+    const s = sectors[Math.floor(Math.random() * sectors.length)];
+    angle = Math.floor(s.min + Math.random() * (s.max - s.min));
+    distance = 12 + Math.random() * 20;
+  } else if (runs === 1) {
+    const sectors = [
+      { min: 30, max: 60 },
+      { min: 130, max: 160 },
+      { min: 200, max: 230 },
+      { min: 250, max: 280 }
+    ];
+    const s = sectors[Math.floor(Math.random() * sectors.length)];
+    angle = Math.floor(s.min + Math.random() * (s.max - s.min));
+    distance = 45 + Math.random() * 20;
+  } else if (runs === 2 || runs === 3) {
+    angle = [30, 75, 210, 250, 285, 330][Math.floor(Math.random() * 6)] + (Math.random() * 16 - 8);
+    distance = 65 + Math.random() * 15;
+  } else if (runs === 4) {
+    const sectors = [
+      { min: 15, max: 40 },
+      { min: 65, max: 85 },
+      { min: 200, max: 225 },
+      { min: 240, max: 270 }
+    ];
+    const s = sectors[Math.floor(Math.random() * sectors.length)];
+    angle = Math.floor(s.min + Math.random() * (s.max - s.min));
+    distance = 82 + Math.random() * 6;
+  } else if (runs >= 6) {
+    const sectors = [
+      { min: 235, max: 265 },
+      { min: 275, max: 295 },
+      { min: 320, max: 340 },
+      { min: 190, max: 220 }
+    ];
+    const s = sectors[Math.floor(Math.random() * sectors.length)];
+    angle = Math.floor(s.min + Math.random() * (s.max - s.min));
+    distance = 95 + Math.random() * 20;
+  }
+
+  angle = (angle + 360) % 360;
+  return { angle, distance: Math.round(distance) };
+}
 
 const COMMENTARY_TEMPLATES = {
   dot: [
@@ -76,9 +139,22 @@ export class LiveMatchEngine {
     ];
 
     this.bowlers = ["Shaheen Afridi", "Haris Rauf", "Mohammad Nawaz"];
-    this.currentBowlerIndex = 0; // Starts with Shaheen Afridi for over 18 (balls 103-108)
+    this.currentBowlerIndex = 0;
     this.ballsSinceWicket = 0;
     this.allOut = false;
+
+    // v4.0 variables
+    this.bowlerStamina = {
+      "Shaheen Afridi": 100, "Haris Rauf": 100, "Mohammad Nawaz": 100,
+      "Lasith Malinga": 100, "Jasprit Bumrah": 100, "Krunal Pandya": 100,
+      "Sandeep Sharma": 100, "Yuzvendra Chahal": 100, "Avesh Khan": 100
+    };
+    this.batsmanDotStreak = {};
+    this.batsmanRecentRuns = {};
+    this.batsmanBoundaryDrought = {};
+    this.batsmanShots = {};
+    this.coachOverrideBowler = null;
+    this.lastPressureIndex = 50;
   }
 
   initialize(scenarioId, scenario) {
@@ -88,6 +164,14 @@ export class LiveMatchEngine {
     this.ballsBowled = (scenario.startingOvers || 0) * 6;
     this.allOut = false;
     this.ballsSinceWicket = 0;
+    this.coachOverrideBowler = null;
+    this.lastPressureIndex = 50;
+
+    // Reset psychologist and wagon wheel
+    this.batsmanDotStreak = {};
+    this.batsmanRecentRuns = {};
+    this.batsmanBoundaryDrought = {};
+    this.batsmanShots = {};
 
     if (scenarioId === "mi_vs_csk_2019") {
       this.strikerName = "Shane Watson";
@@ -136,6 +220,12 @@ export class LiveMatchEngine {
       this.bowlers = ["Shaheen Afridi", "Haris Rauf", "Mohammad Nawaz"];
     }
     this.currentBowlerIndex = 0;
+
+    // Reset stamina for scenario bowlers to 100
+    this.bowlerStamina = {};
+    this.bowlers.forEach(b => {
+      this.bowlerStamina[b] = 100;
+    });
   }
 
   getStriker() {
@@ -153,13 +243,136 @@ export class LiveMatchEngine {
   }
 
   getBowler() {
-    // Shaheen Afridi (18th over, balls 103-108)
-    // Haris Rauf (19th over, balls 109-114)
-    // Mohammad Nawaz (20th over, balls 115-120)
+    if (this.coachOverrideBowler) return this.coachOverrideBowler;
     const overNum = Math.floor(this.ballsBowled / 6);
-    if (overNum === 17) return this.bowlers[0]; // Shaheen Afridi
-    if (overNum === 18) return this.bowlers[1]; // Haris Rauf
-    return this.bowlers[2]; // Mohammad Nawaz or default fallback
+    if (this.bowlers.length === 3) {
+      if (overNum === 17) return this.bowlers[0]; // Shaheen Afridi / Sandeep / Malinga
+      if (overNum === 18) return this.bowlers[1]; // Haris Rauf / Chahal / Bumrah
+      return this.bowlers[2]; // Mohammad Nawaz / Avesh / Krunal
+    }
+    const idx = overNum % this.bowlers.length;
+    return this.bowlers[idx];
+  }
+
+  clone() {
+    const copy = new LiveMatchEngine();
+    copy.target = this.target;
+    copy.currentRuns = this.currentRuns;
+    copy.wickets = this.wickets;
+    copy.ballsBowled = this.ballsBowled;
+    copy.strikerName = this.strikerName;
+    copy.nonStrikerName = this.nonStrikerName;
+    copy.ballsSinceWicket = this.ballsSinceWicket;
+    copy.allOut = this.allOut;
+    copy.bowlerStamina = { ...this.bowlerStamina };
+    copy.lastPressureIndex = this.lastPressureIndex;
+
+    copy.batsmen = this.batsmen.map(b => ({ ...b }));
+    copy.remainingBatsmen = [...this.remainingBatsmen];
+    copy.bowlers = [...this.bowlers];
+    
+    // Copy psychologist states
+    copy.batsmanDotStreak = { ...this.batsmanDotStreak };
+    copy.batsmanBoundaryDrought = { ...this.batsmanBoundaryDrought };
+    copy.batsmanRecentRuns = {};
+    Object.keys(this.batsmanRecentRuns).forEach(k => {
+      copy.batsmanRecentRuns[k] = [...this.batsmanRecentRuns[k]];
+    });
+
+    return copy;
+  }
+
+  simulateBranch(strategy, ballsAhead = 6) {
+    const tempEngine = this.clone();
+    const probabilitiesList = [];
+
+    for (let i = 0; i < ballsAhead; i++) {
+      if (tempEngine.ballsBowled >= 120 || tempEngine.wickets >= 10 || tempEngine.currentRuns >= tempEngine.target) {
+        probabilitiesList.push(tempEngine.currentRuns >= tempEngine.target ? 100 : 0);
+        continue;
+      }
+
+      // Base Probabilities modified by strategy
+      let probs = {
+        dot: 0.28,
+        single: 0.38,
+        double: 0.12,
+        boundary: 0.12,
+        six: 0.06,
+        wicket: 0.04
+      };
+
+      if (strategy === "alpha") {
+        probs.six += 0.10;
+        probs.boundary += 0.08;
+        probs.wicket += 0.06;
+        probs.dot = Math.max(0.05, probs.dot - 0.12);
+        probs.single = Math.max(0.05, probs.single - 0.05);
+      } else if (strategy === "beta") {
+        probs.single += 0.15;
+        probs.dot += 0.05;
+        probs.boundary = Math.max(0.02, probs.boundary - 0.10);
+        probs.six = Math.max(0.01, probs.six - 0.05);
+        probs.wicket = Math.max(0.01, probs.wicket - 0.03);
+      } else if (strategy === "gamma") {
+        probs.six += 0.15;
+        probs.wicket += 0.08;
+        probs.single = Math.max(0.05, probs.single - 0.10);
+        probs.dot = Math.max(0.05, probs.dot - 0.05);
+        probs.double = Math.max(0.02, probs.double - 0.04);
+        probs.boundary = Math.max(0.02, probs.boundary - 0.04);
+      }
+
+      const sum = Object.values(probs).reduce((a, b) => a + b, 0);
+      Object.keys(probs).forEach(k => { probs[k] = probs[k] / sum; });
+
+      const roll = Math.random();
+      let accumulated = 0;
+      let outcome = "dot";
+      for (const [event, prob] of Object.entries(probs)) {
+        accumulated += prob;
+        if (roll <= accumulated) {
+          outcome = event;
+          break;
+        }
+      }
+
+      tempEngine.ballsBowled++;
+      let runsScored = 0;
+      let isWicket = false;
+      if (outcome === "single") runsScored = 1;
+      else if (outcome === "double") runsScored = 2;
+      else if (outcome === "boundary") runsScored = 4;
+      else if (outcome === "six") runsScored = 6;
+      else if (outcome === "wicket") isWicket = true;
+
+      tempEngine.currentRuns = Math.min(tempEngine.target, tempEngine.currentRuns + runsScored);
+      if (isWicket) {
+        tempEngine.wickets++;
+        if (tempEngine.wickets >= 10) tempEngine.allOut = true;
+      }
+
+      let winProbability = 50;
+      const futureRunsNeeded = Math.max(0, tempEngine.target - tempEngine.currentRuns);
+      const futureBallsRemaining = Math.max(0, 120 - tempEngine.ballsBowled);
+
+      if (futureRunsNeeded <= 0) winProbability = 100;
+      else if (futureBallsRemaining <= 0 || tempEngine.wickets >= 10) winProbability = 0;
+      else {
+        const requiredRR = (futureRunsNeeded / futureBallsRemaining) * 6;
+        const wicketsLeft = 10 - tempEngine.wickets;
+        if (requiredRR > 36) winProbability = 1;
+        else {
+          const rDiff = requiredRR - 8;
+          winProbability = 50 - (rDiff * 4) + (wicketsLeft - 5) * 8;
+          winProbability = Math.max(1, Math.min(99, Math.round(winProbability)));
+        }
+      }
+
+      probabilitiesList.push(winProbability);
+    }
+
+    return probabilitiesList;
   }
 
   generateNextBall() {
@@ -167,16 +380,32 @@ export class LiveMatchEngine {
       return null;
     }
 
+    const bowler = this.getBowler();
+    if (!this.bowlerStamina) this.bowlerStamina = {};
+    if (this.bowlerStamina[bowler] === undefined) this.bowlerStamina[bowler] = 100;
+
+    // Bowler fatigue stamina curve depletion
+    const pressure = this.lastPressureIndex || 50;
+    const activeDrain = pressure > 75 ? 3.0 : 2.0;
+    this.bowlerStamina[bowler] = Math.max(0, this.bowlerStamina[bowler] - activeDrain);
+
+    // Resting bowlers recover stamina
+    this.bowlers.forEach(b => {
+      if (b !== bowler) {
+        if (this.bowlerStamina[b] === undefined) this.bowlerStamina[b] = 100;
+        this.bowlerStamina[b] = Math.min(100, this.bowlerStamina[b] + 0.83);
+      }
+    });
+
+    const stamina = this.bowlerStamina[bowler];
     const ballsRemaining = 120 - this.ballsBowled;
     const runsNeeded = Math.max(0, this.target - this.currentRuns);
     const requiredRR = (runsNeeded / ballsRemaining) * 6;
     
-    // Death Over (20th over, ballsBowled >= 114) increases volatility
     const isDeathOver = this.ballsBowled >= 114;
-    // Quiet Over (19th over, balls 109 to 114) reduces intensity
     const isQuietOver = this.ballsBowled >= 108 && this.ballsBowled < 114;
 
-    // 1. Calculate Base Probabilities
+    // Base Probabilities
     let probs = {
       dot: 0.28,
       single: 0.38,
@@ -186,22 +415,30 @@ export class LiveMatchEngine {
       wicket: 0.04
     };
 
-    // 2. Adjust probabilities based on state (Intent / Pressure)
+    // Bowler fatigue adjustments
+    if (stamina < 50) {
+      const fatigueFactor = (100 - stamina) / 100;
+      probs.wicket = probs.wicket * (1.0 - fatigueFactor * 0.5);
+      const economyDegrade = 1.0 + fatigueFactor * 0.4;
+      probs.six = probs.six * economyDegrade;
+      probs.boundary = probs.boundary * economyDegrade;
+      probs.double = probs.double * economyDegrade;
+      probs.single = probs.single * economyDegrade;
+      probs.dot = Math.max(0.05, probs.dot / economyDegrade);
+    }
+
     if (requiredRR > 12) {
-      // High required rate: High Risk aggression
       probs.six += 0.06;
       probs.boundary += 0.04;
       probs.wicket += 0.03;
       probs.single -= 0.05;
       probs.dot -= 0.08;
     } else if (requiredRR > 8) {
-      // Moderate required rate: Tense build-up
       probs.six += 0.03;
       probs.boundary += 0.02;
       probs.wicket += 0.01;
       probs.dot -= 0.06;
     } else if (requiredRR < 5) {
-      // Low required rate: Keep it safe
       probs.dot += 0.08;
       probs.single += 0.04;
       probs.boundary -= 0.04;
@@ -209,7 +446,6 @@ export class LiveMatchEngine {
       probs.wicket -= 0.02;
     }
 
-    // Quiet over adjustment (builds a realistic pacing gap)
     if (isQuietOver) {
       probs.dot += 0.10;
       probs.single += 0.05;
@@ -218,7 +454,6 @@ export class LiveMatchEngine {
       probs.wicket -= 0.02;
     }
 
-    // Wicket consolidation: lower aggression if wicket fell very recently
     if (this.ballsSinceWicket > 0 && this.ballsSinceWicket <= 3) {
       probs.six -= 0.04;
       probs.boundary -= 0.04;
@@ -227,7 +462,6 @@ export class LiveMatchEngine {
       probs.dot += 0.05;
     }
 
-    // Death over volatility booster
     if (isDeathOver) {
       probs.six += 0.06;
       probs.boundary += 0.02;
@@ -236,18 +470,15 @@ export class LiveMatchEngine {
       probs.single -= 0.04;
     }
 
-    // Ensure no negative probabilities
     Object.keys(probs).forEach(k => {
       if (probs[k] < 0.01) probs[k] = 0.01;
     });
 
-    // Normalize probabilities to sum up to 1.0
     const sum = Object.values(probs).reduce((a, b) => a + b, 0);
     Object.keys(probs).forEach(k => {
       probs[k] = probs[k] / sum;
     });
 
-    // 3. Roll outcome
     const roll = Math.random();
     let accumulated = 0;
     let outcome = "dot";
@@ -260,7 +491,6 @@ export class LiveMatchEngine {
       }
     }
 
-    // 4. Update state variables
     this.ballsBowled++;
     this.ballsSinceWicket++;
     
@@ -276,7 +506,6 @@ export class LiveMatchEngine {
       this.ballsSinceWicket = 0;
     }
 
-    // Update batsman stats
     const striker = this.getStriker();
     if (striker) {
       striker.balls++;
@@ -286,6 +515,42 @@ export class LiveMatchEngine {
     }
 
     this.currentRuns = Math.min(this.target, this.currentRuns + runsScored);
+
+    // Psychologist state updates
+    if (striker) {
+      const name = striker.name;
+      if (this.batsmanDotStreak[name] === undefined) this.batsmanDotStreak[name] = 0;
+      if (this.batsmanRecentRuns[name] === undefined) this.batsmanRecentRuns[name] = [];
+      if (this.batsmanBoundaryDrought[name] === undefined) this.batsmanBoundaryDrought[name] = 0;
+
+      if (runsScored === 0 && !isWicket) {
+        this.batsmanDotStreak[name]++;
+      } else {
+        this.batsmanDotStreak[name] = 0;
+      }
+
+      this.batsmanRecentRuns[name].push(runsScored);
+      if (this.batsmanRecentRuns[name].length > 5) {
+        this.batsmanRecentRuns[name].shift();
+      }
+
+      if (runsScored >= 4) {
+        this.batsmanBoundaryDrought[name] = 0;
+      } else {
+        this.batsmanBoundaryDrought[name]++;
+      }
+    }
+
+    // Generate Wagon Wheel Shot using realistic polar coordinates
+    let shot = null;
+    if (runsScored > 0 || outcome === "dot" || outcome === "wicket") {
+      const name = striker ? striker.name : "Batsman";
+      if (!this.batsmanShots[name]) this.batsmanShots[name] = [];
+
+      const coords = generateRealisticPolarCoordinates(outcome, runsScored);
+      shot = { angle: coords.angle, distance: coords.distance, runs: runsScored };
+      this.batsmanShots[name].push(shot);
+    }
 
     let outBatsmanName = "";
     if (isWicket) {
@@ -305,27 +570,29 @@ export class LiveMatchEngine {
       }
     }
 
-    // Strike Rotation logic:
-    // Rotate strike on odd runs (1 or 3 runs)
     if (runsScored === 1 || runsScored === 3) {
       this.swapStrike();
     }
 
-    // Rotate strike at the end of the over (6 balls)
     const isOverEnd = this.ballsBowled % 6 === 0;
     if (isOverEnd && !this.allOut && this.wickets < 10) {
       this.swapStrike();
     }
 
-    // Generate over decimal format
     const overNumber = Math.floor(this.ballsBowled / 6);
     const ballInOver = this.ballsBowled % 6;
     const overDecimal = ballInOver === 0 ? overNumber : parseFloat(`${overNumber - 1}.${ballInOver}`);
 
-    // Generate commentary
     const batsmanText = isWicket ? outBatsmanName : this.strikerName;
     const bowlerText = this.getBowler();
     const commentary = this._generateCommentary(outcome, batsmanText, bowlerText);
+
+    // Simulate parallel branches
+    const branches = {
+      alpha: this.simulateBranch("alpha"),
+      beta: this.simulateBranch("beta"),
+      gamma: this.simulateBranch("gamma")
+    };
 
     return {
       over: overDecimal,
@@ -344,7 +611,12 @@ export class LiveMatchEngine {
         strike: b.name === this.strikerName && b.active,
         out: b.out
       })),
-      isOverEnd: isOverEnd
+      isOverEnd: isOverEnd,
+      
+      // v4.0 properties
+      bowlerStamina: { ...this.bowlerStamina },
+      shot: shot,
+      branches: branches
     };
   }
 
